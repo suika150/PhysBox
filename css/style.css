@@ -1,0 +1,799 @@
+  :root {
+    --bg: #1a1c23;
+    --panel: #22252f;
+    --panel2: #2a2e3a;
+    --border: #353a4a;
+    --accent: #4fc3f7;
+    --accent2: #ff7043;
+    --accent3: #a5d6a7;
+    --text: #e0e6f0;
+    --text2: #8a95a8;
+    --tool-active: #4fc3f7;
+    --hover: #323849;
+    --shadow: 0 4px 20px rgba(0,0,0,.5);
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; user-select: none; }
+  /* ── Top Bar ── */
+  /* ★1行を絶対に崩さない。以前は幅が足りなくなるとボタンが押し潰され、中の文字が
+     2段に折り返して（「シミュレーショ／ン」）バーが縦に伸びたように見えていた。
+     ・nowrap ＋ flex-shrink:0 … 文字を折り返させない・ボタンを潰させない
+     ・overflow:hidden        … 入りきらない分は右端で綺麗に切る（横スクロールも出さない）
+     切れる前にラベルを畳んで記号だけにするのが下のメディアクエリ。 */
+  #topbar {
+    height: 40px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 10px; gap: 6px; flex-shrink: 0;
+    overflow: hidden;
+    /* 極端に狭くしてどうしても入りきらないときは、右端でスパッと切れるとボタンが
+       半分だけ残って汚い。フェードさせて「続きがある」ように見せる。 */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+            mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  }
+  #topbar > * { flex-shrink: 0; }
+  .sim-btn, .menu-btn, .speed-label { white-space: nowrap; }
+  .brand { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: 1px; margin-right: 8px;
+           display: flex; align-items: center; gap: 4px; }
+  /* ── ロゴの横のマスコット（キーボードを打つメンダコ・ドット絵）──
+     ★32×24px＝16×12 ドットをちょうど2倍。整数倍でないとドットの幅が1px/2pxと不揃いになる。
+     ★動きは steps(1) のコマ送り：補間するとドット絵が半端な位置に滲む。
+       .m-fa／.m-fb の2コマを 0.25 秒ずつ交互に出す（左右の腕の上げ下ろし＋下ろした側のキーが光る）。
+       まばたきは目の上半分を体の色で塞ぐ（4秒に1回・0.12秒）。 */
+  .mascot { width: 32px; height: 24px; flex-shrink: 0; pointer-events: none; shape-rendering: crispEdges; }
+  .mascot .px-o  { fill: #e8835f; }
+  .mascot .px-e  { fill: #2a1410; }
+  .mascot .px-p  { fill: #f2a08a; }
+  .mascot .px-k  { fill: #56627a; }
+  .mascot .px-kk { fill: #2b3242; }
+  .mascot .px-lit { fill: #4fc3f7; }
+  .mascot .m-fa { animation: m-frame .5s steps(1) infinite; }
+  .mascot .m-fb { animation: m-frame .5s steps(1) -.25s infinite; }
+  .mascot .m-blink { opacity: 0; animation: m-blink 4s steps(1) infinite; }
+  @keyframes m-frame { 0% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes m-blink { 0% { opacity: 0; } 97% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .mascot .m-fa, .mascot .m-blink { animation: none; } .mascot .m-fb { display: none; } }
+  .menu-btn { background: none; border: none; color: var(--text2); padding: 4px 8px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+  .menu-btn:hover { background: var(--hover); color: var(--text); }
+  .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .sim-btn { padding: 4px 14px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  #btn-play  { background: #43a047; color: #fff; }
+  #btn-play:hover { background: #66bb6a; }
+  #btn-pause { background: #f57c00; color: #fff; }
+  #btn-pause:hover { background: #ffa726; }
+  #btn-step  { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  #btn-step:hover { background: var(--hover); }
+  /* ★チュートリアル（初心者マーク）。右端に寄せる（physBox.html の margin-left:auto）。
+     名前は他の記号ボタンより長く残す：初めて触る人が探す入口なので、記号だけだと見落とす。
+     ★名前（132px）が入るのは、他の名前を畳んだ 1330〜1510px と、他も名前つきの 1660px 以上だけ。
+       実測：他を畳むと右端 1162px＋132px、名前つきだと 1488px＋132px。どちらにも右のフェード 18px を足した境目。
+       その間（1511〜1659px）は他の名前が出ているぶん入らないので、こちらも記号だけにする。 */
+  #btn-tutorial { background: var(--panel2); color: var(--text); border: 1px solid var(--border); line-height: 15px; }
+  #btn-tutorial:hover { background: var(--hover); }
+  #btn-reset { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  #btn-reset:hover { background: var(--hover); }
+  #btn-redo  { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  #btn-redo:hover { background: var(--hover); }
+  #btn-redo:disabled { opacity: .4; cursor: default; }
+  /* ★line-height を決め打ちする。記号だけのボタンにすると行ボックスの高さが記号ごとに
+     変わり、ボタンの高さが揃わなくなる（実測：記号が文字だったころ ⊞ 25px／⊙ 28px／◍ 26px／🎥 25px）。
+     文字のラベルが付いていたころは、ラベルの行ボックスが高さを決めていたので揃っていた。
+     15px は文字入りのボタン（▶実行など）と同じ 25px 高になる値。 */
+  #btn-grid, #btn-gridsize, #btn-osnap, #btn-follow, #btn-strobe, #btn-strobeset { background: var(--panel2); color: var(--text2); border: 1px solid var(--border); line-height: 15px; }
+  #btn-grid:hover, #btn-gridsize:hover, #btn-osnap:hover, #btn-follow:hover, #btn-strobe:hover, #btn-strobeset:hover { background: var(--hover); color: var(--text); }
+  /* ★ストロボもここに入れる。入れ忘れていたころは、押しても見た目が変わらないうえ
+     （対象の既定が「選択中の物体だけ」なので）残像も出ず、効かないボタンに見えた。 */
+  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { background: var(--accent); color: #10141c; border-color: var(--accent); }
+  #btn-grid.on:hover, #btn-osnap.on:hover, #btn-follow.on:hover, #btn-strobe.on:hover { background: #38b2e8; }
+  /* 2つのボタンを1つのコントロールに見せる（左＝ON/OFF、右＝間隔メニュー） */
+  .btn-split { display: flex; gap: 0; flex-shrink: 0; }
+  /* ★:not(:only-child)：カメラは窓の出る位置のために .btn-split に1つだけで入っている（HTML の注）。
+     only-child は first-child でも last-child でもあるので、素の :first-child／:last-child だと
+     ▾ 用の 11px と左半分用の角（右が四角・右の枠なし）の両方を拾い、文字が他より小さかった。 */
+  .btn-split > .sim-btn:first-child:not(:only-child) { border-radius: var(--radius) 0 0 var(--radius); border-right: none; padding-right: 10px; }
+  .btn-split > .sim-btn:last-child:not(:only-child)  { border-radius: 0 var(--radius) var(--radius) 0; padding: 4px 7px; font-size: 11px; }
+  /* ★幅を取り置く。間隔は 0.02s〜1s の6段階で桁数が変わるので、成り行きだと
+     間隔を変えるたびにストロボのボタンが伸び縮みし、右隣のカメラが横へ動く。
+     いちばん長い「0.02s」で 32px なので 34px 確保しておく。 */
+  #btn-strobe-int { color: var(--accent); font-weight: 600; display: inline-block; width: 34px; text-align: left; }
+  #btn-strobe.on #btn-strobe-int { color: #10141c; }
+  /* ── スイッチのボタン（グリッドスナップ・物体スナップ・ストロボ・カメラ）──
+     ★幅があるうちは記号のとなりに名前を出す。以前は名前を出さず title だけだったが、
+       記号から機能を当てるのは初見では無理で、押して確かめるしかなかった。
+       バーに余裕があるのに読めないものを並べておく理由が無いので名前を出す方へ倒した。
+     ★狭くなったら .lbl を畳んで記号だけにする（下のメディアクエリ）。畳んだときは幅を
+       34px で固定する：文字の記号だったころは幅がばらついた（⌖ 35px / ⊙ 43px / 🎥 48px。絵文字と
+       テキスト記号でフォントが違う）成り行きだと並びがガタつく。min-width ではなく
+       width ＝ 絵文字（🎥）はテキスト記号（⌖）よりグリフが広く、min-width だと
+       34/34/36px と不揃いになる。 */
+  .topbar-icon { padding: 4px 10px; text-align: center; }
+  /* ★記号は左ツールと同じ SVG スプライト（physBox.html 冒頭の ti-gridsnap・ti-play ほか）。以前は文字の記号
+     （⊞ ⊙ ◍ 🎥）で、絵文字とテキスト記号でフォントも大きさも揃わず、左ツールとも見た目がばらばらだった。
+     16px：ボタンの行の高さ（line-height 15px＝ボタン高 25px）を変えない大きさ。-3px で文字の中心に揃う。
+     ★ON のときは地が --accent（水色）なので、記号の色を --ic で暗色 1 色に倒す（色の中身は symbol 側の注）。 */
+  .sim-btn svg.ti {
+    display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
+    fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  }
+  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { --ic: #10141c; }
+  /* ▾（設定メニューを開く側）は本文の文字より小さく見せる。以前の ▾ は font-size 11px で、
+     同じ見かけにすると 12px。 */
+  .btn-split > .sim-btn:last-child:not(:only-child) svg.ti { width: 12px; height: 12px; vertical-align: -1px; }
+  @media (max-width: 1400px) {
+    .speed-label .lbl { display: none; }
+  }
+  /* ★名前を畳むのはいちばん先（この4つは並びで覚えて押すスイッチなので、名前を読むのは
+     最初の一度きり）。畳むと 326px 空く（実測：名前つき 1488px → 1162px）。
+     1510px は、名前つきの右端 1488px に右のフェード 18px を足しても収まる境目。
+     （記号を SVG にし、ロゴの横にマスコットを置いて 1391px から伸びたので 1420px から上げた） */
+  @media (max-width: 1510px) {
+    .topbar-icon .lbl, #btn-strobe .lbl { display: none; }
+    .topbar-icon { width: 34px; padding: 4px 0; }
+    /* ★分割ボタンの左半分に付いたときは、上の padding より :first-child の
+       padding-right:10px が勝つ（クラス2つ＋擬似クラスのほうが強い）。記号が左へ寄るので打ち消す。 */
+    .btn-split > .sim-btn.topbar-icon:first-child { padding: 4px 0; }
+  }
+  #btn-tutorial .lbl { display: inline; }
+  #btn-tutorial { width: auto; padding: 4px 10px; }
+  @media (max-width: 1329px), (min-width: 1511px) and (max-width: 1659px) {
+    #btn-tutorial .lbl { display: none; }
+    #btn-tutorial { width: 34px; padding: 4px 0; }
+  }
+  /* ★マスコットは飾りなので、機能のある「1ステップ」などの名前より先に畳む。
+     1050px は、1ステップなどの名前まで畳んだときの右端 1032px（マスコット込み）にフェード 18px を足した境目。 */
+  @media (max-width: 1050px) {
+    .mascot { display: none; }
+  }
+  @media (max-width: 1150px) {
+    #btn-step .lbl, #btn-reset .lbl, #btn-redo .lbl { display: none; }
+    #btn-step, #btn-reset, #btn-redo { width: 34px; padding: 4px 0; text-align: center; }
+  }
+  /* ここまで来るとブラウザの最小ウィンドウ幅に近い。ロゴと速度スライダーも詰める
+     ★1015px：その手前の右端 996px＋フェード 18px（1000px だと 5px はみ出して横にスクロールした） */
+  @media (max-width: 1015px) {
+    .brand { display: none; }
+    #speed-slider { width: 50px !important; }
+  }
+  #btn-reset:disabled { opacity: .4; cursor: default; }
+  .speed-label { color: var(--text2); font-size: 12px; margin-left: 6px; }
+  #speed-val { color: var(--accent); font-weight: 600; }
+  .topbar-right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .icon-btn { background: none; border: none; color: var(--text2); cursor: pointer; padding: 4px 6px; border-radius: var(--radius); font-size: 15px; }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  /* ── Main Layout ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+  /* ── Left Toolbar ── */
+  /* スクロールするのは #toolbar-scroll。#toolbar 自体を overflow にすると、
+     固定したい選択ツールまで一緒に流れてしまう。 */
+  #toolbar {
+    width: 52px; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; padding: 6px 0; overflow: hidden; flex-shrink: 0;
+  }
+  #toolbar-pinned { flex-shrink: 0; }
+  #toolbar-scroll {
+    width: 100%; flex: 1; min-height: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    overflow-y: auto; overflow-x: hidden;
+  }
+  .tool-group { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  #toolbar-scroll .tool-group:last-child { border-bottom: none; }
+  .tool-btn {
+    width: 40px; height: 38px; border-radius: var(--radius); border: none; background: none;
+    color: var(--text2); cursor: pointer; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; font-size: 17px; transition: all .15s; position: relative;
+  }
+  /* ★nowrap：5文字（「スリンキー」）でラベル幅がボタン幅 40px とちょうど同値になる。
+     フォントが少し違う環境では溢れて2行になり、ボタンの高さが崩れる。 */
+  .tool-btn span.label { font-size: 8px; margin-top: 1px; line-height: 1; white-space: nowrap; }
+  /* ツールのアイコン（physBox.html 冒頭の SVG スプライト）。線の太さ・端の形はここで一括して決め、
+     色は記号ごとに持つ（<symbol style="color:…">）。
+     ★20px：絵文字(17px)は字面に余白があるので、同じ見かけの大きさにするとこのくらいになる。 */
+  .tool-btn svg.ti, #measure-popup svg.ti {
+    display: block; width: 20px; height: 20px;
+    fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .tool-btn:hover { background: var(--hover); color: var(--text); }
+  /* ★選択中は塗りつぶさず、薄い地＋水色の縁で示す。アイコンは色で見分けるので、
+     水色で塗ると青・緑のアイコンが地に沈み、選んだ道具ほど色が読めなくなる。 */
+  .tool-btn.active { background: rgba(79,195,247,.22); box-shadow: inset 0 0 0 1.5px var(--tool-active); color: #fff; }
+  .tool-btn.active:hover { background: rgba(79,195,247,.32); }
+  /* ボタン内の .tool-tip は文言の置き場。#toolbar は overflow でクリップするので、 */
+  /* 実際の表示は body 直下の #tool-tip-pop（position:fixed）が受け持つ。       */
+  .tool-tip { display: none; }
+  /* 吹き出しの見た目は #help-popup と揃える（水色枠・うすい黒・白文字）。
+     ブラウザ標準の title（黒枠・うすい黄色・黒文字のOSの箱）は
+     js/ui/help-popup.js の initTitleTips() がここへ引き取る。 */
+  #tool-tip-pop {
+    position: fixed; max-width: 320px; padding: 6px 9px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--accent);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    font-size: 11px; line-height: 1.6; white-space: pre-line;   /* title の改行をそのまま出す */
+    pointer-events: none; z-index: 20001;
+  }
+  /* ── Canvas area ── */
+  #canvas-wrap {
+    flex: 1; position: relative; overflow: hidden; background: #12141a;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  /* ── Right Panel ── */
+  #rightpanel {
+    width: 230px; background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+  }
+  .rpanel-tab { display: flex; border-bottom: 1px solid var(--border); }
+  .rpanel-tab button {
+    flex: 1; padding: 8px; background: none; border: none; color: var(--text2);
+    font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent;
+  }
+  .rpanel-tab button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.rpanel-body { flex: 1; overflow-y: auto; padding: 8px; }
+  .rpanel-section { margin-bottom: 12px; }
+  #tab-world > .rpanel-section {
+    border-bottom: 1px solid var(--border);
+    margin: 0 -8px 12px;
+    padding: 0 8px 12px;
+  }
+  #tab-world > .rpanel-section:last-child { border-bottom: none; padding-bottom: 0; }
+  /* 見出しは「ここから別のグループ」が一目で分かるように、本文より明るい色＋左の帯で出す。
+     以前は本文と同じ var(--text2) の10pxだったので、並んだ入力欄に埋もれて区切りが読めなかった
+     （どこまでが「熱」でどこからが「波動」かを探すのに、いちいち文字を読む必要があった）。 */
+  .rpanel-title, .prop-group-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--text);
+    margin-bottom: 6px; padding-left: 7px; border-left: 3px solid var(--accent);
+    line-height: 1.35;
+  }
+  /* オブジェタブは一覧が主役なので、右パネルの高さいっぱいまで伸ばす。
+     以前は #obj-list に max-height:300px を直接書いていたため、パネルの下半分が
+     まるごと空いているのに一覧だけが 300px で頭打ちになってスクロールしていた。
+     .rpanel-body は flex:1 で高さが確定しているので、height:100% が解決できる。
+     min-height:0 は、flex の既定（min-height:auto＝中身の高さ）だと縮めなくなり、
+     overflow-y:auto が効かずにパネルごと伸びてしまうため。 */
+  #tab-scene { display: flex; flex-direction: column; height: 100%; }
+  #tab-scene > .rpanel-section { display: flex; flex-direction: column; flex: 1; min-height: 0; margin-bottom: 0; }
+  /* min-height は、パネルが極端に低いときに一覧が高さ0まで潰れないための床。
+     床に当たると #tab-scene がはみ出すが、その分は .rpanel-body 側がスクロールする。 */
+  #obj-list { flex: 1; min-height: 80px; overflow-y: auto; }
+  /* ワールドタブのグループは見出しクリックで折りたたむ（initWorldCollapse が .sec-toggle を付ける）。
+     見出しは各セクションの最初の子なので、畳んだときは「最初の子以外」を隠せばよい。 */
+  #tab-world .rpanel-title.sec-toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px; }
+  #tab-world .rpanel-title.sec-toggle:hover { color: var(--accent); }
+  #tab-world .rpanel-title.sec-toggle::before { content: '▾'; font-size: 9px; opacity: .8; }
+  #tab-world .rpanel-section.collapsed > .rpanel-title.sec-toggle::before { content: '▸'; }
+  #tab-world .rpanel-section.collapsed > .rpanel-title.sec-toggle { margin-bottom: 0; }
+  #tab-world .rpanel-section.collapsed > :not(:first-child) { display: none; }
+  #tab-world .rpanel-section.collapsed { padding-bottom: 6px; margin-bottom: 6px; }
+  /* 物体プロパティのジャンル分け。折りたたみはせず、見出しと横線で区切るだけ。
+     見出しの前後を少し広く取って、グループどうしの間が行間より明らかに広く見えるようにする */
+  .prop-group { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 10px; }
+  .prop-group:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  .prop-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .prop-label { font-size: 11px; color: var(--text2); flex: 0 0 80px; }
+  /* ★見出しの単位・記号は隠し、カーソルを合わせたときに出す（help-popup.js の hideLabelUnit）。
+     右パネルと、同じ設定を出すシミュレーションメニューの窓だけ。左ツールバーの設定窓などは対象外 */
+  #rightpanel .prop-label .u, #sim-popover .prop-label .u { display: none; }
+  .prop-input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 3px 6px; border-radius: 4px; font-size: 11px; min-width: 0;
+  }
+  .prop-input:focus { outline: none; border-color: var(--accent); }
+  /* ★他の値から決まる読み取り専用の欄（readonly）は、入力欄の見た目をやめて「値の表示」にする。
+     枠・背景・数値スピナー・フォーカス枠を持ったままだと、打ち込めるように見えて実際は
+     打ち込めない＝偽のアフォーダンスになる（パネルは「実際に効く操作だけを出す」方針）。
+     ★disabled とは分けること。あちらは「今は効かないだけの操作」（例：「回転しない」がONの
+       ときの角速度）で、いずれ効くようになるので入力欄のまま薄くするのが正しい。
+     ★padding は残す。上下の行の入力欄と数字の開始位置が揃い、縦に読み下せる。
+     ★input のまま（span にしない）なのは、値を書いている側（.value = …）に一切
+       触らずに済ませるため。読み取り専用の欄は21か所あり、書き込み口はさらに多い。 */
+  .prop-input[readonly] {
+    background: none; border-color: transparent; border-radius: 0;
+    cursor: default; padding-left: 0;
+  }
+  .prop-input[readonly]:focus { border-color: transparent; }
+  /* 数値欄の上下矢印。押せそうに見えるので消す（Firefox は appearance で消える） */
+  .prop-input[readonly]::-webkit-inner-spin-button,
+  .prop-input[readonly]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .prop-input[readonly] { -moz-appearance: textfield; appearance: textfield; }
+  .prop-select { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 3px 4px; border-radius: 4px; font-size: 11px; min-width: 0; }
+  .prop-select:focus { outline: none; border-color: var(--accent); }
+  .wave-warn { font-size: 10px; line-height: 1.5; margin: -2px 0 6px 0; }
+  .wave-info { font-size: 10px; color: var(--text2); line-height: 1.6; margin-top: 4px;
+    padding: 5px 6px; background: rgba(0,0,0,.2); border-radius: 4px; }
+  .wave-info b { color: var(--accent); font-weight: 600; }
+  .color-swatch {
+    width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; flex-shrink: 0;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .prop-row .prop-slider { flex: 1; min-width: 0; height: 14px; margin: 0; }
+.prop-row .prop-input.compact { flex: 0 0 52px; }   /* 数値ボックスを固定幅に */
+  #slider-zoom {
+    position: fixed; z-index: 9000; display: none;
+    padding: 7px 10px 9px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--accent); box-shadow: var(--shadow);
+  }
+  .sz-head { display: flex; justify-content: space-between; align-items: baseline;
+             font-size: 11px; color: var(--text2); margin-bottom: 6px;
+             white-space: nowrap; gap: 14px; }
+  .sz-val  { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .sz-track { position: relative; height: 14px; border-radius: 7px;
+              background: var(--bg); border: 1px solid var(--border); cursor: ew-resize; }
+  .sz-fill  { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px;
+              background: rgba(79,195,247,.22); pointer-events: none; }
+  .sz-thumb { position: absolute; top: 50%; width: 12px; height: 18px;
+              margin: -9px 0 0 -6px; border-radius: 3px;
+              background: var(--accent); border: 1px solid #fff; pointer-events: none; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 4px; }
+  .checkbox-row input { accent-color: var(--accent); }
+  /* ── チェックボックスの2列レイアウト（左=挙動フラグ／右=衝突レイヤー） ── */
+  .cb-grid { display: flex; gap: 10px; }
+  .cb-col  { flex: 1; min-width: 0; }
+  .cb-sub  { flex: none; margin-bottom: 4px; }                     /* prop-label の flex:0 0 80px を打ち消す */
+  .layer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; }
+  .layer-grid .checkbox-row { margin-bottom: 0; }
+  .layer-grid label { display: flex; align-items: center; gap: 4px; }
+  .layer-chip { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .btn-small {
+    padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); font-size: 11px; cursor: pointer;
+  }
+  .btn-small:hover { background: var(--hover); }
+  .btn-small.active { border-color: var(--accent); color: var(--accent); background: rgba(79,195,247,.15); }
+  /* ── Status bar ── */
+  #statusbar {
+    height: 24px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 10px; gap: 16px; font-size: 11px; color: var(--text2);
+    flex-shrink: 0;
+  }
+  .status-item span { color: var(--text); font-weight: 600; }
+  .status-item.credit { opacity: .7; }
+  /* ── Context Menu ── */
+  #ctx-menu {
+    position: fixed; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 4px 0; z-index: 9999; box-shadow: var(--shadow);
+    min-width: 160px; display: none;
+  }
+  .ctx-item { padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  /* 表示メニュー・右クリックメニューは項目名が長いので、折り返さず幅のほうを広げる
+     （窓の中の説明文だけは、その場で white-space:normal に戻して折り返す） */
+  #view-menu, #view-menu .ctx-item,
+  #ctx-menu,  #ctx-menu  .ctx-item { white-space: nowrap; }
+  .ctx-item:hover { background: var(--hover); }
+  .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+  .ctx-label { padding: 4px 14px; font-size: 10px; color: var(--text2); text-transform: uppercase; }
+  .ctx-check { display: inline-block; width: 14px; color: var(--accent); }
+  .ctx-submenu-parent { position: relative; }
+  .ctx-submenu {
+    position: absolute; left: 100%; top: -5px; display: none;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 4px 0; box-shadow: var(--shadow);
+    min-width: 170px; max-height: 60vh; overflow-y: auto; z-index: 10000;
+    /* ★項目名を折り返さない。幅は中身に合わせて自動で伸びる（2行になると読みにくいため） */
+    white-space: nowrap;
+  }
+  .ctx-submenu-parent:hover .ctx-submenu { display: block; }
+  /* ★機能が OFF の項目は下位の窓を出さない。中身がその機能の設定だけなので、開いても
+     触れる操作が無いため（右パネルの「効く操作だけ出す」と同じ流儀）。見出しの
+     チェックを押して ON にすると ctxRefreshChecks がこのクラスを外し、その場で開く */
+  .ctx-submenu-parent.sub-off:hover .ctx-submenu { display: none; }
+  .ctx-submenu-parent.sub-off .ctx-sub-arrow { visibility: hidden; }
+  /* 下位メニューの中のスライダーを掴んでいる間は、カーソルが外へ出ても開いたままにする
+     （:hover が外れて display:none になるとドラッグが途中で切れるため） */
+  .ctx-submenu-parent.sub-pinned > .ctx-submenu { display: block; }
+  /* ── シミュレーションメニューの設定ウィンドウ ──
+     :hover で出す下位メニューと違い、外側を押すか Esc を押すまで閉じない。
+     中に数値欄とスライダーを並べるので、カーソルが少し外れただけで消えては使えない。 */
+  #sim-popover {
+    position: fixed; z-index: 10001; width: 272px;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 8px 10px 10px;
+    max-height: 80vh; overflow-y: auto;
+  }
+  #sim-popover .sp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  #sim-popover .sp-title { font-size: 11px; font-weight: 700; color: var(--accent); }
+  #sim-popover .sp-close { cursor: pointer; color: var(--text2); font-size: 15px; line-height: 1; }
+  #sim-popover .sp-close:hover { color: var(--text); }
+  #sim-popover .prop-label { flex: 0 0 92px; }
+  /* 選択肢の文言が長く、92px の見出しと横に並べると切れてしまう行は、見出しを上へ
+     逃がしてプルダウンに窓の幅いっぱいを渡す（カメラの「向きの決め方」がこれ）。 */
+  #sim-popover .prop-row.sp-wide { display: block; }
+  #sim-popover .prop-row.sp-wide .prop-label { display: block; flex: none; margin-bottom: 4px; }
+  #sim-popover .prop-row.sp-wide .prop-select { width: 100%; }
+  #sim-popover .sp-note { font-size: 10px; color: var(--text2); line-height: 1.6; margin: 4px 0 6px; }
+  #sim-popover .sp-sub {
+    font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--text2);
+    border-top: 1px solid var(--border); margin: 9px 0 6px; padding-top: 7px;
+  }
+  /* 設定ウィンドウを開いている項目は、メニュー側でも選択中と分かるようにする */
+  .ctx-item.sp-open { background: var(--hover); color: var(--accent); }
+  /* ── Overlay Info ── */
+  #overlay-info {
+    position: absolute; top: 10px; right: 10px; background: rgba(26,28,35,.85);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px;
+    font-size: 11px; color: var(--text2); pointer-events: none; backdrop-filter: blur(4px);
+  }
+  #overlay-info .hint { color: var(--text); margin-bottom: 2px; }
+  /* 物体のグラフ：1ウィンドウ＝1物体。物体ごとに動的に作られるのでクラスで指定する
+     （位置は開いた順に少しずつずらして velgraph.js が inline で入れる） */
+  .velgraph-panel {
+  position: absolute; width: 320px;
+  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
+  box-shadow: var(--shadow); z-index: 50;
+  display: flex; flex-direction: column;            /* ★縦並び：canvasを可変にする土台 */
+  resize: both; overflow: hidden;                   /* ★右下ドラッグでサイズ変更 */
+  min-width: 300px; min-height: 300px;
+  height: 420px;                                    /* ★3段（変位・速度・加速度）が入る既定の高さ */
+  max-width: 90vw; max-height: 90vh;
+  }
+  /* プログラムの窓：グラフの枠を借りるが、中身は設定だけなので高さは内容なり。
+     ★resize は切る（引き伸ばしても意味のあるものが無い）。畳むと見出しの棒になる。 */
+  .program-panel {
+  width: 212px !important; min-width: 212px; min-height: 0; height: auto;
+  resize: none; padding: 6px;
+  }
+  .program-panel.active { border-color: #ffd54f; }
+  /* リモコンの窓：プログラムの窓と同じ理由で高さは内容なり。幅は「押す」ボタンが
+     指で狙える最小限（150px）。★resize は切る（引き伸ばしても意味のあるものが無い）。 */
+  .remote-panel {
+  width: 170px !important; min-width: 170px; min-height: 0; height: auto;
+  resize: none; padding: 6px;
+  }
+  /* 通過カウンタの窓：プログラム・リモコンと同じく高さは内容なり・resize なし。
+     ★グラフの canvas は大きさを固定する（.velgraph-panel canvas の flex・min-height 150px を
+     打ち消す。残すと窓が縦に伸びて、置いた題材の上へかぶさる）。 */
+  .counter-panel {
+  width: 200px !important; min-width: 200px; min-height: 0; height: auto;
+  resize: none; padding: 6px;
+  }
+  .counter-panel.active { border-color: #4dd0e1; }
+  .counter-panel canvas { flex: none !important; min-height: 0 !important; width: 184px !important; height: 72px !important; }
+  /* 速さの分布計の窓：カウンタの窓と同じ作り（高さは内容なり・resize なし・canvas は固定） */
+  .spdmeter-panel {
+  width: 300px !important; min-width: 300px; min-height: 0; height: auto;
+  resize: none; padding: 6px;
+  }
+  .spdmeter-panel.active { border-color: #f06292; }
+  .spdmeter-panel canvas { flex: none !important; min-height: 0 !important; width: 268px !important; height: 150px !important; }
+  .remote-panel .prop-row { margin:2px 0; }
+  .remote-panel .prop-label { font-size:10px; }
+  .remote-panel .vg-hint { white-space:normal; }   /* 相手の名前は折り返して全部見せる */
+  /* 〈手で動かす〉の速さ・向き。★並べ方をここに書くのは、行の出し入れが
+     `style.display = ''` で行われるため（syncRemotePanel の show）。要素の style に
+     display:flex と書くと、出し直した瞬間にそれごと消えて block に落ちる
+     （実測：入力欄が幅 8px ＝ padding だけになった）。 */
+  .remote-panel .rm-driverow { display:flex; align-items:center; gap:3px; margin-bottom:6px; }
+  /* ★範囲の行も並べ方は CSS に置く。インラインの display:flex は syncRemotePanel の
+     show（style.display = ''）で消え、行が block に戻って入力欄が幅 8px に潰れていた。 */
+  .remote-panel .rm-rangerow { display:flex; align-items:center; gap:4px; margin-top:3px; }
+  .remote-panel .rm-tgtrow   { display:flex; align-items:center; gap:4px; margin-top:5px; }
+  .remote-panel .rm-sigrow   { display:flex; align-items:center; gap:3px; margin-top:4px; }
+  /* ★数値スピナーを消す：170px の窓に数値欄を2つ並べると、
+     上下の矢印だけで中身が潰れて桁が1つも見えなくなる（実測：入力欄の幅が 10px になった）。
+     readonly の欄で矢印を消しているのは「打てるように見えるのに打てない」を避けるため
+     だが、こちらは幅の問題なので別に書く。 */
+  .remote-panel .rm-driverow .prop-input::-webkit-inner-spin-button,
+  .remote-panel .rm-driverow .prop-input::-webkit-outer-spin-button,
+  .remote-panel .rm-rangerow .prop-input::-webkit-inner-spin-button,
+  .remote-panel .rm-rangerow .prop-input::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  .remote-panel .rm-driverow .prop-input,
+  .remote-panel .rm-rangerow .prop-input {
+    -moz-appearance:textfield; appearance:textfield; text-align:right;
+  }
+  .pg-sec { font-size:10px; color:var(--text2); margin:6px 0 2px; letter-spacing:.5px; }
+  .pg-sec:first-child { margin-top:0; }
+  .program-panel .prop-row { margin:2px 0; }
+  .program-panel .prop-label { font-size:10px; }
+  .program-panel select.prop-input { font-size:11px; }
+  /* 回路グラフ：速度グラフと同じ見た目・操作にそろえる（横に広いので幅だけ変える） */
+  .circgraph-panel {
+  position: absolute; width: 460px;
+  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
+  box-shadow: var(--shadow); z-index: 50;
+  display: flex; flex-direction: column;
+  resize: both; overflow: hidden;
+  min-width: 380px; min-height: 300px;
+  height: 420px;                                    /* ★段積み（1段1素子）が入る既定の高さ */
+  max-width: 90vw; max-height: 90vh;
+  }
+  .circgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
+  .circgraph-panel .cg-note { margin-top:4px; font-size:10px; color:#ffa726; line-height:1.35; }
+  /* エネルギーのグラフ：1ウィンドウ＝1つの系。項の名前が長いので幅だけ広げる */
+  .enegraph-panel {
+  position: absolute; width: 420px;
+  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
+  box-shadow: var(--shadow); z-index: 50;
+  display: flex; flex-direction: column;
+  resize: both; overflow: hidden;
+  min-width: 380px; min-height: 320px;
+  height: 450px;                                    /* ★1枚のグラフ＋操作3段（折り返しあり）＋説明2行 */
+  max-width: 90vw; max-height: 90vh;
+  }
+  .enegraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
+  .enegraph-panel .eg-note { margin-top:5px; font-size:10px; color:#ffa726; line-height:1.35; }
+  .enegraph-panel .eg-ref-note { margin-top:6px; font-size:10px; color:var(--text2); line-height:1.5; }
+  .enegraph-panel .eg-ref-note b { color:var(--text); font-weight:600; }
+  .enegraph-panel .eg-ref-show { margin-left:6px; cursor:pointer; text-decoration:underline; color:var(--accent); }
+  .enegraph-panel .eg-mode { background:var(--panel2); color:var(--text); border:1px solid var(--border);
+                             border-radius:3px; font-size:10px; padding:1px 3px; }
+  .vg-title { font-size:11px; font-weight:700; color:var(--accent); }
+  .vg-status { font-size:10px; color:var(--text2); flex:1; }
+  .vg-close { cursor:pointer; color:var(--text2); font-size:15px; line-height:1; }
+  .vg-close:hover { color:var(--text); }
+  .velgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
+  .vg-hint { font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .vg-grp { font-size:10px; color:var(--text2); min-width:26px; }
+  .btn-small:disabled { opacity:.45; cursor:default; }
+  .btn-small:disabled:hover { background: var(--panel2); }
+  .vg-header { display:flex; align-items:center; gap:6px; margin-bottom:6px; cursor:move; }
+  .vg-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:6px; }
+  .vg-check { display:flex; align-items:center; gap:3px; font-size:11px; color:var(--text); cursor:pointer; }
+  .vg-check input { accent-color: var(--accent); }
+  .vg-chip { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .vg-controls .btn-small { margin-left:auto; }
+  /* ── Material Presets ── */
+  .material-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .mat-btn {
+    padding: 5px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); font-size: 10px; cursor: pointer; text-align: center;
+  }
+  .mat-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mat-btn.active { border-color: var(--accent); background: rgba(79,195,247,.15); color: var(--accent); }
+/* ── Custom Color Picker ── */
+  #color-popup {
+    position: fixed; z-index: 10000; width: 208px; padding: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .cp-sv { position: relative; width: 100%; height: 96px; border-radius: 4px; border: 1px solid var(--border); cursor: crosshair; }
+  .cp-sv-cursor { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.6); pointer-events: none; }
+  .cp-hue { position: relative; width: 100%; height: 12px; margin-top: 6px; border-radius: 3px; border: 1px solid var(--border); cursor: pointer;
+    background: linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); }
+  .cp-hue-cursor { position: absolute; top: -2px; width: 6px; height: 14px; margin-left: -3px; border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.6); pointer-events: none; }
+  .cp-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .cp-preview { width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--border); flex-shrink: 0; }
+  .cp-alpha { display: none; align-items: center; gap: 6px; margin-top: 8px; }
+  .cp-alpha-label { font-size: 10px; color: var(--text2); flex-shrink: 0; }
+  .cp-alpha input[type=range] { flex: 1; min-width: 0; height: 14px; margin: 0; accent-color: var(--accent); }
+  .cp-alpha-val { font-size: 11px; color: var(--accent); min-width: 30px; text-align: right; }
+  .cp-hex { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 3px 6px; border-radius: 4px; font-size: 11px; }
+  .cp-hex:focus { outline: none; border-color: var(--accent); }
+  .cp-title { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--text2); margin: 8px 0 4px; }
+  .cp-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+  .cp-sw { width: 18px; height: 18px; border-radius: 3px; border: 2px solid transparent; cursor: pointer; }
+  .cp-sw:hover { border-color: var(--accent); }
+  .cp-empty { font-size: 10px; color: var(--text2); }
+  /* ── Property Help Popup ── */
+  #help-popup {
+    position: fixed; z-index: 10001; width: 224px; padding: 8px 10px;
+    background: var(--panel); border: 1px solid var(--accent);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    pointer-events: none;   /* カーソルが乗り移ってちらつくのを防ぐ */
+  }
+  .help-title { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+  .help-body  { font-size: 10px; color: var(--text); line-height: 1.55; }
+  .has-help { cursor: help; border-bottom: 1px dotted var(--text2); }
+/* ── GIF録画オーバーレイ ── */
+  #gif-overlay { position:absolute; inset:0; z-index:200; cursor:crosshair; }
+  #gif-selrect {
+    position:absolute; display:none; border:2px dashed var(--accent);
+    background:rgba(79,195,247,0.08); box-shadow:0 0 0 4000px rgba(0,0,0,0.35);
+    pointer-events:none;
+  }
+  #gif-hint {
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    background:rgba(26,28,35,0.9); color:var(--text); border:1px solid var(--border);
+    padding:6px 14px; border-radius:6px; font-size:12px; pointer-events:none; white-space:nowrap;
+  }
+  #gif-countdown {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    font-size:120px; font-weight:800; color:#fff; text-shadow:0 4px 24px rgba(0,0,0,0.8);
+    pointer-events:none;
+  }
+  #gif-panel {
+    position:absolute; left:50%; bottom:16px; transform:translateX(-50%); z-index:210;
+    background:rgba(26,28,35,0.94); border:1px solid var(--accent); border-radius:8px;
+    padding:8px 10px; display:flex; align-items:center; gap:8px; box-shadow:var(--shadow);
+    /* ★1行に収める。
+       absolute + left:50% だと、幅を書かない限り「収まる幅」は
+       （キャンバスの幅 − 50%）＝ 半分までしか取れない。transform で見た目は
+       中央へ戻るが、折り返しの判断はその半分の幅でされるため、項目が増えた
+       ときに中の文字が2行に折れていた。max-content で中身なりの幅にする。 */
+    width:max-content; white-space:nowrap;
+    /* キャンバスが狭くて入りきらないときは、折り返さず横スクロールで逃がす
+       （切り捨てられて「録画開始」が押せなくなるより、いつでも1行のほうがよい） */
+    max-width:calc(100% - 20px); overflow-x:auto;
+  }
+  #gif-panel > * { flex:none; }   /* 縮めて折り返させない */
+  .gif-btn { padding:5px 14px; border-radius:5px; border:none; cursor:pointer; font-size:12px; font-weight:600; color:#fff; }
+  .gif-btn.red { background:#c62828; }   .gif-btn.red:hover { background:#ef5350; }
+  .gif-btn.green { background:#2e7d32; } .gif-btn.green:hover { background:#43a047; }
+  .gif-btn.gray { background:var(--panel2); color:var(--text); border:1px solid var(--border); }
+  .gif-btn.gray:hover { background:var(--hover); }
+  .gif-status { font-size:12px; color:var(--text2); margin-right:4px; }
+  /* ── アプリ内ダイアログ（js/ui/dialog.js）──
+     ブラウザ標準の confirm/alert の代わり。他のポップアップと同じ
+     「水色の枠・うすい黒の背景・白文字」で揃える。 */
+  #app-modal {
+    position: fixed; inset: 0; z-index: 20000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.45);
+  }
+  #app-modal .am-box {
+    width: min(430px, calc(100vw - 32px));
+    background: rgba(26,28,35,.94); border: 1px solid var(--accent); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 16px 18px 14px; color: #fff;
+  }
+  #app-modal .am-title { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 9px; }
+  #app-modal .am-body  { font-size: 12px; line-height: 1.75; color: #fff; }
+  #app-modal .am-body b { color: var(--accent); font-weight: 600; }
+  /* 補足（元に戻せる範囲など）は本文より一段落とす */
+  #app-modal .am-note {
+    font-size: 11px; line-height: 1.7; color: var(--text2);
+    border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px;
+  }
+  #app-modal .am-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  #app-modal .am-btn {
+    padding: 6px 16px; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  }
+  #app-modal .am-btn:hover { background: var(--hover); }
+  #app-modal .am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #app-modal .am-btn.am-ok { background: var(--accent); border-color: var(--accent); color: #10222b; }
+  #app-modal .am-btn.am-ok:hover { background: #7fd4fa; }
+  #app-modal .am-btn.am-danger { background: #c62828; border-color: #c62828; color: #fff; }
+  #app-modal .am-btn.am-danger:hover { background: #ef5350; }
+  /* ── デモシーンの一覧窓（js/ui/demo-browser.js）──
+     項目が多い（127件）のでメニューではなく窓。配色はアプリ内ダイアログに合わせる。 */
+  /* ★窓は上端で固定する（上下中央に置かない）。窓の高さは分野ごとの中身で決まるので、
+     中央寄せだと分野を切り替えるたびに分野タブもデモのボタンも上下に跳ね、同じ場所を
+     続けて押せない。実測（画面高 800px）：タブの上端が力学 146px／波動 229／
+     電磁気学 244／熱力学 271 と 125px ずれていた。伸び縮みは下端だけで受ける。 */
+  #demo-browser {
+    position: fixed; inset: 0; z-index: 20000;
+    display: flex; align-items: flex-start; justify-content: center;
+    background: rgba(0,0,0,.45);
+  }
+  /* ★幅は広く取る。単元を横に流して詰めるので、幅を広げるほど縦が縮む。
+     文字のボタンのころは「スクロールさせない」で決めていたが（1120px 幅で力学タブが 596px）、
+     サムネイルのカードにしてからは力学タブがスクロール約3画面ぶんになり、収めるのは諦めた。
+     カードを小さくすれば減るが、128px より縮めると絵の中の装置が見分けにくくなる。
+     高さの上限は置かない（画面いっぱいまで使う）。
+     ★上端の余白 46px は動かさない。窓は上端で固定し、伸び縮みは下端だけで受ける（上の★）。 */
+  #demo-browser .db-box {
+    margin-top: 46px;
+    width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 92px);
+    display: flex; flex-direction: column;
+    background: rgba(26,28,35,.96); border: 1px solid var(--accent); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 11px 16px 10px; color: #fff;
+  }
+  #demo-browser .db-head { display: flex; align-items: center; justify-content: space-between; }
+  #demo-browser .db-title { font-size: 13px; font-weight: 700; color: var(--accent); }
+  #demo-browser .db-close {
+    background: none; border: none; color: var(--text2); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px;
+  }
+  #demo-browser .db-close:hover { color: #fff; }
+  #demo-browser .db-tabs {
+    display: flex; gap: 6px; margin: 8px 0 6px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  /* ★単元（見出し＋カード）を横に流して詰める。単元ごとに改行すると 1〜3 件の単元の右が空く */
+  #demo-browser .db-body {
+    overflow-y: auto; padding-right: 4px;
+    display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 18px; row-gap: 4px;
+  }
+  #demo-browser .db-group { max-width: 100%; }
+  /* 単元の見出し。カードの名前より一段強く、分野タブよりは弱く */
+  #demo-browser .db-unit {
+    font-size: 11px; font-weight: 700; color: var(--accent); margin: 7px 0 5px;
+    border-left: 3px solid var(--accent); padding-left: 6px; white-space: nowrap;
+  }
+  #demo-browser .db-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* カード：サムネイル（240×150 を半分に）＋名前2行まで。
+     ★幅を揃えるのは、文字の長さでボタン幅がばらばらだと目で追いにくかったため */
+  #demo-browser .db-card {
+    width: 128px; padding: 0; text-align: left; cursor: pointer;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); overflow: hidden; font: inherit;
+  }
+  #demo-browser .db-card:hover { border-color: var(--accent); background: var(--hover); }
+  #demo-browser .db-card:disabled { opacity: .4; cursor: default; }
+  #demo-browser .db-card:disabled:hover { border-color: var(--border); background: var(--panel2); }
+  #demo-browser .db-pic { width: 128px; height: 80px; background: #111318; }
+  #demo-browser .db-pic img { display: block; width: 100%; height: 100%; }
+  #demo-browser .db-name {
+    font-size: 11px; line-height: 1.3; padding: 3px 5px 4px; height: calc(2 * 1.3em + 7px);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* ★下の帯は3行ぶんの高さで固定する。説明の長さで高さが変わると、窓の中身が上下に跳ねる */
+  #demo-browser .db-foot {
+    font-size: 11px; line-height: 1.4; color: var(--text2); border-top: 1px solid var(--border);
+    margin-top: 8px; padding-top: 6px; flex-shrink: 0;
+    height: calc(3 * 1.4em); overflow: hidden;
+  }
+  #demo-browser .db-foot.db-foot-note { color: var(--text); }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  /* ════════════════════════════════════════
+     スマホ・タブレット（タッチ操作は js/input/touch.js）
+     ════════════════════════════════════════ */
+  /* ★100vh はスマホではアドレスバーの裏まで含んだ高さになり、下のステータスバーが画面外に落ちる。
+     dvh（見えている高さ）が使えるブラウザではそちらを使う。 */
+  @supports (height: 100dvh) { body { height: 100dvh; } }
+  /* ★キャンバスの上では、ブラウザ標準のスクロール・ピンチ拡大・ダブルタップ拡大を全部止める
+     （指の操作は touch.js が物体の操作とカメラのズームへ翻訳する）。 */
+  #canvas-wrap, #main-canvas { touch-action: none; -webkit-touch-callout: none; }
+  /* ドラッグで動かす部品（touch.js の TOUCH_DRAG_SEL）もスクロールに取られないようにする */
+  .vg-header, #circuit-pop-head, #emf-pop-head, #measure-pop-head, .sp-head, .db-head,
+  #cp-sv, #cp-hue, #gif-overlay, .sz-track { touch-action: none; }
+  /* ボタンの連打をダブルタップ拡大と取り違えさせない */
+  button, .tool-btn, .ctx-item, .menu-btn { touch-action: manipulation; }
+  /* ★吹き出し（ツールの説明・ヘルプ）はカーソルを乗せている間だけ出す作りなので、
+     指では「乗せたまま」が離れず、出たまま画面に残る。タッチで使っている間は出さない。 */
+  body.touch-input #tool-tip-pop, body.touch-input #help-popup { display: none !important; }
+  /* 引き出しの開け閉めのボタンは、狭い画面でだけ出す */
+  #rp-open-btn, #rp-close-btn { display: none; }
+  /* ── 指で押しやすい大きさ（タッチが主の端末だけ。マウスの画面は詰めたまま） ── */
+  @media (pointer: coarse) {
+    .ctx-item { padding: 10px 16px; font-size: 13px; }
+    .menu-btn { padding: 6px 10px; }
+    .prop-input, .prop-select { font-size: 13px; padding: 5px 6px; }
+    .btn-small { padding: 7px 12px; }
+    .checkbox-row { margin-bottom: 8px; }
+    .checkbox-row input { width: 18px; height: 18px; }
+    .rpanel-tab button { padding: 11px 6px; }
+  }
+  /* ── 狭い画面（スマホの縦持ち） ──
+     ★760px：iPad の縦持ち（768〜834px）は今の横並びのまま（キャンバスが 480px 以上残る）。
+       それより狭いと右パネルの 230px でキャンバスが潰れるので、パネルを重ねる引き出しにする。 */
+  /* ★トップバーは、狭い画面とタッチの端末では指で横にスクロールさせる。上の「1行を絶対に崩さない」は
+     そのままで、入りきらない分を右端のフェードで切る代わりに、隠れたボタン（カメラ・チュートリアル）へ
+     指で届くようにする（iPad の縦持ち 820px でも右端が切れていた）。スクロールバーは出さない。 */
+  @media (max-width: 760px), (pointer: coarse) {
+    #topbar {
+      overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; touch-action: pan-x;
+      -webkit-mask-image: none; mask-image: none;
+    }
+    #topbar::-webkit-scrollbar { display: none; }
+  }
+  @media (max-width: 760px) {
+    #topbar .sep { margin: 0 1px; }
+    #main { position: relative; }
+    #toolbar { width: 48px; }
+    #rightpanel {
+      position: absolute; top: 0; right: 0; bottom: 0; z-index: 900;
+      width: min(300px, calc(100vw - 56px));
+      box-shadow: -6px 0 24px rgba(0,0,0,.5);
+      transform: translateX(105%); transition: transform .2s ease;
+    }
+    body.rp-open #rightpanel { transform: none; }
+    #rp-close-btn {
+      display: block; flex: 0 0 40px; font-size: 14px; color: var(--text2);
+    }
+    #rp-open-btn {
+      display: block; position: absolute; right: 10px; bottom: 10px; z-index: 5;
+      padding: 9px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: rgba(34,37,47,.92); color: var(--text); font-size: 13px; cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+    body.rp-open #rp-open-btn { display: none; }
+    /* 右上の操作ヒントは小さく・幅を抑える（狭い画面ではキャンバスの半分を覆っていた） */
+    #overlay-info { top: 6px; right: 6px; max-width: 55%; padding: 5px 8px; font-size: 10px; }
+    /* ステータスバーは要るものだけ（ズームと選択中）。座標・ステップ・クレジットは畳む */
+    #statusbar { gap: 10px; padding: 0 8px; overflow: hidden; white-space: nowrap; }
+    #statusbar .status-item:nth-child(2), #statusbar .status-item:nth-child(4), #statusbar .credit { display: none; }
+    /* 浮かぶ窓（グラフ・設定窓・メニュー）は画面の幅を超えさせない */
+    #sim-popover, #ctx-menu { max-width: calc(100vw - 12px); }
+    /* グラフの窓はキャンバスの中に置かれる（親は #canvas-wrap）。min-width 300〜380px のままだと
+       スマホのキャンバス幅（約 340px）を超えて右がはみ出し、× も見えなくなる */
+    [class*="graph-panel"] { min-width: 0 !important; max-width: 100% !important; max-height: 100% !important; }
+  }
+  /* ── 背の低い画面（スマホの横持ち） ── */
+  @media (max-height: 500px) {
+    #statusbar { display: none; }
+    .tool-btn { height: 34px; }
+  }

@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>PhysBox — Physics Sandbox</title>
+<meta name="author" content="suika_neko">
+<link rel="stylesheet" href="css/style.css">
+  <script src="lib/clipper.js"></script>
+  <script src="lib/earcut.min.js"></script>
+  <script src="lib/gif.js"></script>
+  <!-- ★gif.worker.js の中身を文字列として持つだけのファイル。file:// で開くと
+       fetch が使えないので、worker のソースは <script> 経由でここから取る
+       （js/app/gif-recorder.js の ensureGifWorker を参照）。 -->
+  <script src="lib/gif.worker.embed.js"></script>
+</head>
+<body>
+<!-- 左ツールバーのアイコン（SVG スプライト）。各ボタンは <svg class="ti"><use href="#ti-…"/></svg> で引く。
+     ★絵文字をやめたのは OS・フォントで絵柄も大きさも変わるため（🎮 や ◺ が環境ごとに別物だった）。
+     ★別ファイルにしない：bundle.gs が取り込むのは <script src> と stylesheet だけで、
+       <img src="…svg"> は Web アプリで出なくなる。
+     ★色は道具ごとに <symbol style="color:…"> で持ち、中は currentColor で描く。2色目だけ直に書く。
+       色は「その部品が画面で描かれる色」に合わせる（速度＝緑・電場と回路＝黄・磁場＝緑・加熱＝橙・冷却＝水色・
+       水＝青・レーザー＝赤・ばねとヒンジ＝黄・形＝物体の既定色の水色）。暗い背景で沈む色（ロープの茶など）だけ明るくした。
+     ★XML 宣言（小なり＋疑問符で始まる行）は書かない。HtmlService のテンプレートに通されると記号として読まれる。 -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="ti-pointer" viewBox="0 0 24 24" style="color:#e0e6f0"><path d="M6 3.5v15.5l4.2-4 2.8 6.2 2.6-1.2-2.8-6h5.7z" fill="currentColor" fill-opacity=".25"/></symbol>
+  <symbol id="ti-pan" viewBox="0 0 24 24" style="color:#ffcc80"><path d="M8 12.5V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V12M17 12V8.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1.3c-2.2 0-3.6-.8-4.8-2l-3.4-3.8a1.5 1.5 0 0 1 2.2-2L8 15.5"/></symbol>
+  <symbol id="ti-velocity" viewBox="0 0 24 24" style="color:#66bb6a"><circle cx="7" cy="17" r="3.5" fill="#4fc3f7" fill-opacity=".35" stroke="#4fc3f7"/><path d="M10 14 19.5 4.5M13.5 4.5h6v6"/></symbol>
+  <symbol id="ti-circle" viewBox="0 0 24 24" style="color:#4fc3f7"><circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".25"/></symbol>
+  <symbol id="ti-box" viewBox="0 0 24 24" style="color:#4fc3f7"><rect x="4" y="5" width="16" height="14" rx="1" fill="currentColor" fill-opacity=".25"/></symbol>
+  <symbol id="ti-triangle" viewBox="0 0 24 24" style="color:#4fc3f7"><path d="M4.5 4.5v15h15z" fill="currentColor" fill-opacity=".25"/><path d="M4.5 16h3.5v3.5" stroke-width="1.2"/></symbol>
+  <symbol id="ti-polygon" viewBox="0 0 24 24" style="color:#4fc3f7"><path d="M12 3.5 20 9l-3 10.5H7L4 9z" fill="currentColor" fill-opacity=".25"/><g fill="currentColor" stroke="none"><circle cx="12" cy="3.5" r="1.6"/><circle cx="20" cy="9" r="1.6"/><circle cx="17" cy="19.5" r="1.6"/><circle cx="7" cy="19.5" r="1.6"/><circle cx="4" cy="9" r="1.6"/></g></symbol>
+  <symbol id="ti-freehand" viewBox="0 0 24 24" style="color:#4fc3f7"><path d="M5.5 9.5C6 5 11 3.5 14 5.5s6 2 5.5 6-3 4-2.5 6.5-5 3.5-8 1.5S3 17 4.5 14s.5-2 1-4.5z" fill="currentColor" fill-opacity=".25"/></symbol>
+  <symbol id="ti-gear" viewBox="0 0 24 24" style="color:#4fc3f7"><path d="M18.4 10.4L20.9 10.7L20.9 13.3L18.4 13.6L17.7 15.4L19.2 17.3L17.3 19.2L15.4 17.7L13.6 18.4L13.3 20.9L10.7 20.9L10.4 18.4L8.6 17.7L6.7 19.2L4.8 17.3L6.3 15.4L5.6 13.6L3.1 13.3L3.1 10.7L5.6 10.4L6.3 8.6L4.8 6.7L6.7 4.8L8.6 6.3L10.4 5.6L10.7 3.1L13.3 3.1L13.6 5.6L15.4 6.3L17.3 4.8L19.2 6.7L17.7 8.6z" fill="currentColor" fill-opacity=".25"/><circle cx="12" cy="12" r="2.2"/></symbol>
+  <symbol id="ti-boolean" viewBox="0 0 24 24" style="color:#4fc3f7"><path d="M3 3h12v6h6v12H9v-6H3z" fill="currentColor" fill-opacity=".25"/><path d="M9 15V9h6v6z" stroke-width="1.1" stroke-dasharray="2 1.6"/></symbol>
+  <symbol id="ti-program" viewBox="0 0 24 24" style="color:#ce93d8"><path d="M3 4h4l1 1.5h3L12 4h9v6H12l-1 1.5H8L7 10H3z"/><path d="M3 13h4l1 1.5h3L12 13h6v6H12l-1 1.5H8L7 19H3z" fill="currentColor" fill-opacity=".45"/></symbol>
+  <symbol id="ti-remote" viewBox="0 0 24 24" style="color:#b0bec5"><rect x="7" y="7.5" width="10" height="14" rx="2"/><circle cx="12" cy="12" r="2.2" fill="#ef5350" stroke="#ef5350"/><g fill="currentColor" stroke="none"><circle cx="10" cy="17" r="1"/><circle cx="14" cy="17" r="1"/></g><path d="M9.3 4.6a4 4 0 0 1 5.4 0M7.3 2.8a7 7 0 0 1 9.4 0" stroke="#f48fb1" stroke-width="1.4"/></symbol>
+  <symbol id="ti-measure" viewBox="0 0 24 24" style="color:#4dd0e1"><path d="M3.5 17.5a8.5 8.5 0 0 1 17 0z" fill="currentColor" fill-opacity=".18"/><path d="M5.2 12.4l1.5.9M8.4 9.1l.9 1.5M12 7.9v1.8M15.6 9.1l-.9 1.5M18.8 12.4l-1.5.9" stroke-width="1.3"/><path d="M12 17.5l4-5.6" stroke="#f06292" stroke-width="1.9"/><circle cx="12" cy="17.5" r="1.6" fill="#f06292" stroke="#f06292"/><path d="M3 20.5h18" stroke-width="1.3"/></symbol>
+  <symbol id="ti-counter" viewBox="0 0 24 24" style="color:#4dd0e1"><path d="M11 2.5v19" stroke-dasharray="2.2 2"/><circle cx="5" cy="16" r="2.6" fill="#4fc3f7" fill-opacity=".35" stroke="#4fc3f7"/><path d="M8.2 16h8.3M14.3 13.8l2.2 2.2-2.2 2.2" stroke="#66bb6a"/><text x="17.2" y="9.5" font-size="9" font-weight="700" font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="currentColor" stroke="none">+1</text></symbol>
+  <symbol id="ti-spdmeter" viewBox="0 0 24 24" style="color:#f06292"><rect x="2.5" y="3.5" width="19" height="17" rx="1" stroke-dasharray="2.4 1.8"/><path d="M6 17h2.2v-3H6zM9.6 17h2.2V8.5H9.6zM13.2 17h2.2v-6h-2.2zM16.8 17H19v-2.2h-2.2z" fill="currentColor" fill-opacity=".5"/></symbol>
+  <symbol id="ti-waveprobe" viewBox="0 0 24 24" style="color:#4dd0e1"><path d="M2 15c2-4 4-4 6 0s4 4 6 0" stroke-opacity=".55"/><circle cx="17" cy="9" r="4.2"/><path d="M14.6 9h4.8M17 6.6v4.8" stroke-width="1.3"/></symbol>
+  <symbol id="ti-hinge" viewBox="0 0 24 24" style="color:#ffd54f"><path d="M4 19 12 12 17 3.5" stroke-width="5" stroke-opacity=".45"/><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="#000" fill-opacity=".45" stroke="none"/></symbol>
+  <symbol id="ti-fixjoint" viewBox="0 0 24 24" style="color:#b0bec5"><rect x="2.5" y="7" width="9.5" height="10" rx="1" fill="currentColor" fill-opacity=".25"/><rect x="12" y="7" width="9.5" height="10" rx="1" fill="currentColor" fill-opacity=".25"/><path d="M12 4.5 10.3 6.5l3.4 2.2-3.4 2.2 3.4 2.2-3.4 2.2 3.4 2.2L12 19.5" stroke="#ef5350" stroke-width="1.4"/></symbol>
+  <symbol id="ti-slinky" viewBox="0 0 24 24" style="color:#ffd54f"><path d="M2.5 7v10M21.5 7v10"/><path d="M2.5 12H4.5l1.5-4.5 2 9 2-9 2 9 2-9 2 9 2-9 1.5 4.5h2"/></symbol>
+  <symbol id="ti-rope" viewBox="0 0 24 24" style="color:#bcaaa4"><path d="M4.5 5c1.5 13 12 15 15 4.5"/><circle cx="4.5" cy="5" r="1.8" fill="currentColor" stroke="none"/><circle cx="19.5" cy="9.5" r="2.8" fill="#4fc3f7" fill-opacity=".35" stroke="#4fc3f7"/></symbol>
+  <symbol id="ti-rod" viewBox="0 0 24 24" style="color:#90a4ae"><path d="M7 16.5 17 7.5" stroke-width="2.6"/><circle cx="5.5" cy="18" r="2.6" fill="currentColor" fill-opacity=".25"/><circle cx="18.5" cy="6" r="2.6" fill="currentColor" fill-opacity=".25"/></symbol>
+  <symbol id="ti-axle" viewBox="0 0 24 24" style="color:#b0bec5"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity=".25"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><path d="M20 12a8 8 0 1 1-2.6-5.9" stroke="#ff7043"/><path d="M16.9 2.3l.5 3.8-3.8.5" stroke="#ff7043"/></symbol>
+  <symbol id="ti-thruster" viewBox="0 0 24 24" style="color:#b0bec5"><path d="M12 2.5c3 2 4.5 5.5 4.5 9.5v4.5h-9V12c0-4 1.5-7.5 4.5-9.5z" fill="currentColor" fill-opacity=".25"/><circle cx="12" cy="9" r="1.5"/><path d="M7.5 12.5 5 15.5v2.5h2.5M16.5 12.5l2.5 3v2.5h-2.5"/><path d="M10 18.5c0 1.8.8 2.8 2 3.5 1.2-.7 2-1.7 2-3.5" stroke="#ff7043" fill="#ffca28" stroke-width="1.4"/></symbol>
+  <symbol id="ti-tracer" viewBox="0 0 24 24" style="color:#ff7043"><path d="M3 21C6 5 12 3 16 9.5" stroke-width="2.2" stroke-dasharray="0 3.4"/><circle cx="18" cy="13" r="3" fill="#4fc3f7" stroke="#4fc3f7"/></symbol>
+  <symbol id="ti-flowfield" viewBox="0 0 24 24" style="color:#29b6f6"><path d="M2.5 6.5c2.5-2 4.5 2 7 0s4.5 2 7 0h4.5M18.5 4.5l2.5 2-2.5 2"/><path d="M2.5 12c2.5-2 4.5 2 7 0s4.5 2 7 0h4.5M18.5 10l2.5 2-2.5 2"/><path d="M2.5 17.5c2.5-2 4.5 2 7 0s4.5 2 7 0h4.5M18.5 15.5l2.5 2-2.5 2"/></symbol>
+  <symbol id="ti-laser" viewBox="0 0 24 24" style="color:#b0bec5"><rect x="2" y="8.5" width="8" height="7" rx="1" fill="currentColor" fill-opacity=".25"/><path d="M10 12h11.5" stroke="#ef5350" stroke-width="2.4"/><path d="M13 7.5l1.2 1.5M17 6.5l.6 1.8M13 16.5l1.2-1.5M17 17.5l.6-1.8" stroke="#ef5350" stroke-width="1.2"/></symbol>
+  <symbol id="ti-optic" viewBox="0 0 24 24" style="color:#81d4fa"><path d="M12 3c2.8 4 2.8 14 0 18-2.8-4-2.8-14 0-18z" fill="currentColor" fill-opacity=".25"/><path d="M2 7.5h10l9 4.5M2 16.5h10l9-4.5" stroke="#ef5350" stroke-width="1.3"/></symbol>
+  <symbol id="ti-wave" viewBox="0 0 24 24" style="color:#4dd0e1"><circle cx="6" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M9.5 8.5a5 5 0 0 1 0 7M12.4 5.6a9 9 0 0 1 0 12.8M15.2 2.8a13 13 0 0 1 0 18.4"/></symbol>
+  <symbol id="ti-fluid" viewBox="0 0 24 24" style="color:#29b6f6"><path d="M12 3c3.5 5 6 8 6 11.5a6 6 0 0 1-12 0C6 11 8.5 8 12 3z" fill="currentColor" fill-opacity=".25"/><path d="M9 14.5a3 3 0 0 0 2.2 3" stroke-width="1.3"/></symbol>
+  <symbol id="ti-gas" viewBox="0 0 24 24" style="color:#78c8ff"><g fill="currentColor" stroke="none"><circle cx="8" cy="7" r="2"/><circle cx="17.5" cy="6" r="2"/><circle cx="13" cy="13" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></g><path d="M3.5 5 5.8 6M21.5 3.5 19.7 4.8M9 11.5l1.8.8M3 21.5l1.4-1.8M21 21.5l-1.2-1.7" stroke-width="1.3"/></symbol>
+  <symbol id="ti-vessel" viewBox="0 0 24 24" style="color:#26c6da"><path d="M4 3.5V20.5h16V3.5"/><rect x="4.5" y="9" width="15" height="2.6" fill="#b0bec5" stroke="none"/><path d="M12 9V2.5" stroke="#b0bec5"/><g fill="#78c8ff" stroke="none"><circle cx="8" cy="15" r="1.3"/><circle cx="14" cy="17.5" r="1.3"/><circle cx="16.5" cy="14.3" r="1.3"/><circle cx="10" cy="18.3" r="1.3"/></g></symbol>
+  <symbol id="ti-heat" viewBox="0 0 24 24" style="color:#ff7043"><path d="M12 2.5c1 3.5 5.5 5.5 5.5 11a5.5 5.5 0 0 1-11 0c0-2.8 1.3-4.4 2.7-5.5.2 1.8 1 3 2.1 3.6C11 8.5 11 5.5 12 2.5z" fill="currentColor" fill-opacity=".25"/><path d="M12 20.5c-1.8 0-2.8-1.2-2.8-2.8 0-1.4 1-2.4 2-3 .1 1 .6 1.6 1.2 1.9.4-1 .5-2 .3-3 1.4 1 2.1 2.4 2.1 3.9 0 1.7-1.1 3-2.8 3z" fill="#ffca28" stroke="none"/></symbol>
+  <symbol id="ti-cool" viewBox="0 0 24 24" style="color:#26c6da"><path d="M12 2.5v19M3.8 7.2l16.4 9.6M3.8 16.8l16.4-9.6"/><path d="M9.5 4 12 6.3 14.5 4M9.5 20 12 17.7 14.5 20M4 10.6l3.2-1-.8-3.2M20 13.4l-3.2 1 .8 3.2M4 13.4l3.2 1-.8 3.2M20 10.6l-3.2-1 .8-3.2" stroke-width="1.4"/></symbol>
+  <symbol id="ti-efield" viewBox="0 0 24 24" style="color:#ffca28"><rect x="2.5" y="2.5" width="19" height="19" rx="1" stroke-width="1.1" stroke-dasharray="2 2" stroke-opacity=".6"/><path d="M7 19V6M4.8 8.5 7 6l2.2 2.5M12 19V6M9.8 8.5 12 6l2.2 2.5M17 19V6M14.8 8.5 17 6l2.2 2.5"/></symbol>
+  <symbol id="ti-bfield" viewBox="0 0 24 24" style="color:#81c784"><rect x="2.5" y="2.5" width="19" height="19" rx="1" stroke-width="1.1" stroke-dasharray="2 2" stroke-opacity=".6"/><circle cx="8" cy="8" r="2.6"/><circle cx="16" cy="8" r="2.6"/><circle cx="8" cy="16" r="2.6"/><circle cx="16" cy="16" r="2.6"/><g fill="currentColor" stroke="none"><circle cx="8" cy="8" r=".9"/><circle cx="16" cy="8" r=".9"/><circle cx="8" cy="16" r=".9"/><circle cx="16" cy="16" r=".9"/></g></symbol>
+  <symbol id="ti-condrod" viewBox="0 0 24 24" style="color:#ffca28"><path d="M2 5.5h20M2 18.5h20" stroke-width="1.4"/><rect x="8.5" y="3" width="3.2" height="18" rx="1" fill="currentColor" stroke="none"/><path d="M14.5 12h6.5M18.5 9.5 21 12l-2.5 2.5" stroke="#66bb6a"/></symbol>
+  <symbol id="ti-circuit" viewBox="0 0 24 24" style="color:#ffca28"><path d="M5 10.6V4h4.2M14.8 4H19v16H5v-6.6"/><rect x="9.2" y="2.4" width="5.6" height="3.2" fill="currentColor" fill-opacity=".25"/><path d="M2.4 10.6h5.2"/><path d="M3.7 13.4h2.6" stroke-width="2.6"/></symbol>
+  <symbol id="ti-text" viewBox="0 0 24 24" style="color:#e0e6f0"><path d="M3.5 19.5 9 4.5h1.5l5.5 15M5.8 14h8.9"/><path d="M19.5 5v14M18 5h3M18 19h3" stroke-width="1.3"/></symbol>
+  <symbol id="ti-draw" viewBox="0 0 24 24" style="color:#e0e6f0"><path d="M15.5 3.5l4 4L9 18l-5 1.3L5.3 14.3z" fill="#ffb74d" fill-opacity=".8"/><path d="M13.3 5.7l4 4"/><path d="M3 22c3-1.5 6 .5 9-.5s5-1.5 8.5-.5" stroke-width="1.3"/></symbol>
+  <!-- ★ここから下の4つはトップバーのスイッチ用（グリッドスナップ・物体スナップ・ストロボ・カメラ）。
+       ONのボタンは地が水色（--accent）で塗られ、水色の記号が溶けて消える。そこで色は
+       var(--ic, …) で持ち、ONのときだけ CSS が --ic を暗色に差し替えて1色にする
+       （カスタムプロパティは <use> の影の木へ継承される。symbol の style に直書きした color は外から上書きできない）。 -->
+  <symbol id="ti-gridsnap" viewBox="0 0 24 24" style="color:var(--ic,#b0bec5)"><path d="M3.5 3.5h17v17h-17zM9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17" stroke-width="1.1" stroke-opacity=".6"/><circle cx="14.8" cy="9.2" r="2.8" fill="var(--ic,#4fc3f7)" stroke="var(--ic,#4fc3f7)" stroke-width="1.4"/></symbol>
+  <symbol id="ti-objsnap" viewBox="0 0 24 24" style="color:var(--ic,#4fc3f7)"><rect x="3" y="9" width="12" height="12" rx="1" fill="currentColor" fill-opacity=".25"/><g stroke="var(--ic,#ffca28)"><circle cx="15" cy="9" r="3.6"/><path d="M15 2.5v2.9M15 12.6v2.9M8.5 9h2.9M18.6 9h2.9" stroke-width="1.4"/></g></symbol>
+  <symbol id="ti-strobe" viewBox="0 0 24 24" style="color:var(--ic,#4fc3f7)"><g fill="currentColor"><circle cx="4" cy="4.5" r="2.5" fill-opacity=".1" stroke-opacity=".4"/><circle cx="9.3" cy="6.5" r="2.5" fill-opacity=".15" stroke-opacity=".6"/><circle cx="14.7" cy="11" r="2.5" fill-opacity=".25" stroke-opacity=".8"/><circle cx="20" cy="17.5" r="2.5" fill-opacity=".45"/></g></symbol>
+  <!-- ★初心者マーク（若葉マーク）。チュートリアルを開くボタン用。左が黄・右が緑の2枚の矢羽根で、
+       上のまん中が切れ込み、下が尖る（道路交通法の標識の形）。色は標識の色そのままで、ON/OFF の無い
+       ボタンなので --ic は使わない。縁は背景に沈まないよう暗い線で1周させる。 -->
+  <symbol id="ti-beginner" viewBox="0 0 24 24"><path d="M12 6.2 5 2.5v12.6l7 6.4z" fill="#ffd600" stroke="#10141c" stroke-width=".9"/><path d="M12 6.2 19 2.5v12.6l-7 6.4z" fill="#2eaa4a" stroke="#10141c" stroke-width=".9"/></symbol>
+  <symbol id="ti-camera" viewBox="0 0 24 24" style="color:var(--ic,#b0bec5)"><rect x="2.5" y="8" width="12.5" height="10" rx="1.5" fill="currentColor" fill-opacity=".25"/><path d="M15 11.5l6.5-3.5v10L15 14.5z"/><circle cx="6" cy="5" r="2"/><circle cx="11.5" cy="5" r="2"/></symbol>
+  <!-- ★実行・1ステップ・戻る・進む・▾ は色を持たない（symbol に color を書かない）。ボタンの文字色
+       （実行＝白・戻る＝本文色・無効時は半透明）をそのまま継ぐので、状態の見せ方はボタン側の CSS だけで決まる。 -->
+  <symbol id="ti-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></symbol>
+  <symbol id="ti-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="ti-step" viewBox="0 0 24 24"><path d="M5 5v14l10.5-7z" fill="currentColor"/><path d="M19 5v14" stroke-width="2.4"/></symbol>
+  <symbol id="ti-undo" viewBox="0 0 24 24"><path d="M8.5 5 4.5 9l4 4"/><path d="M4.5 9H15a5.25 5.25 0 0 1 0 10.5h-5"/></symbol>
+  <symbol id="ti-redo" viewBox="0 0 24 24"><path d="M15.5 5l4 4-4 4"/><path d="M19.5 9H9a5.25 5.25 0 0 0 0 10.5h5"/></symbol>
+  <symbol id="ti-caret" viewBox="0 0 24 24"><path d="M6.5 9.5 12 15l5.5-5.5" stroke-width="2.2"/></symbol>
+</svg>
+<div id="topbar">
+  <div class="brand"><span>PhysBox</span>
+    <!-- ★ロゴの横のマスコット（キーボードを打つメンダコ）。16×12 ドットのドット絵を 1ドット＝2px で出す。
+         GIF ではなくインライン SVG：GIF は透明が2値で縁が汚れやすく、別ファイルも要る。rect を並べて
+         shape-rendering: crispEdges で描けば補間されずドットのまま拡大される。
+         動きはコマ送り（css/style.css の .mascot の下）：腕の上げ下ろし2コマ＋まばたき。 -->
+    <svg class="mascot" viewBox="0 0 16 12" aria-hidden="true">
+      <g class="px-o"><rect x="5" y="1" width="6" height="1"/><rect x="2" y="2" width="12" height="1"/><rect x="3" y="3" width="10" height="1"/><rect x="3" y="4" width="10" height="1"/><rect x="3" y="5" width="10" height="1"/><rect x="3" y="6" width="10" height="1"/><rect x="3" y="7" width="10" height="1"/><rect x="4" y="8" width="1" height="1"/><rect x="6" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="11" y="8" width="1" height="1"/></g>
+      <g class="px-p"><rect x="4" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/></g>
+      <g class="px-e"><rect x="5" y="4" width="1" height="1"/><rect x="10" y="4" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="10" y="5" width="1" height="1"/></g>
+      <g class="px-o m-blink"><rect x="5" y="4" width="1" height="1"/><rect x="10" y="4" width="1" height="1"/></g>
+      <g class="px-k"><rect x="1" y="9" width="14" height="1"/><rect x="1" y="10" width="1" height="1"/><rect x="14" y="10" width="1" height="1"/><rect x="1" y="11" width="14" height="1"/></g>
+      <g class="px-kk"><rect x="2" y="10" width="12" height="1"/></g>
+      <g class="m-fa"><g class="px-o"><rect x="2" y="7" width="1" height="2"/></g><g class="px-o"><rect x="13" y="5" width="1" height="2"/></g><g class="px-lit"><rect x="2" y="10" width="2" height="1"/></g></g>
+      <g class="m-fb"><g class="px-o"><rect x="2" y="5" width="1" height="2"/></g><g class="px-o"><rect x="13" y="7" width="1" height="2"/></g><g class="px-lit"><rect x="12" y="10" width="2" height="1"/></g></g>
+    </svg>
+  </div>
+  <button class="menu-btn" onclick="toggleSceneMenu(event)">シーン</button>
+  <button class="menu-btn" onclick="toggleEditMenu(event)">編集</button>
+  <button class="menu-btn" onclick="toggleViewMenu(event)">表示</button>
+  <button class="menu-btn" onclick="toggleSimMenu(event)">シミュレーション</button>
+  <div class="sep"></div>
+  <button class="sim-btn" id="btn-play"  onclick="simPlay()"  title="実行 (Z)"><svg class="ti"><use href="#ti-play"/></svg> 実行</button>
+  <button class="sim-btn" id="btn-pause" onclick="simPause()" title="停止 (Z)" style="display:none"><svg class="ti"><use href="#ti-pause"/></svg> 停止</button>
+  <!-- ★ラベルは .lbl で包む。幅が足りなくなったら CSS がここだけ隠して記号だけにする
+       （文字が2段に折り返してバーが崩れて見えるのを防ぐため）。title は畳んだとき用 -->
+  <button class="sim-btn" id="btn-step"  onclick="simStep()" title="1/60秒だけ進める"><svg class="ti"><use href="#ti-step"/></svg><span class="lbl"> 1ステップ</span></button>
+  <button class="sim-btn" id="btn-reset" onclick="stepBack()" title="一手戻す (Ctrl+Z)"><svg class="ti"><use href="#ti-undo"/></svg></button>
+  <button class="sim-btn" id="btn-redo"  onclick="stepForward()" title="一手進む (Ctrl+Y / Ctrl+Shift+Z)" disabled><svg class="ti"><use href="#ti-redo"/></svg></button>
+  <div class="sep"></div>
+  <span class="speed-label" title="シミュレーションの進む速さ"><span class="lbl">速度: </span><span id="speed-val">1.0×</span></span>
+  <input type="range" id="speed-slider" min="0.1" max="2.0" step="0.1" value="1" style="width:80px;margin-left:4px" oninput="setSpeed(this.value)">
+  <div class="sep"></div>
+  <!-- ★ここから右は「記号＋名前」のボタン（.topbar-icon）。名前は .lbl で包み、
+       幅が足りなくなったら CSS が畳んで記号だけにする（左の ⏭1ステップ と同じ作り）。
+       ★ストロボは名前に加えて間隔（0.1s）も文字で出す。残像の間隔＝速さを読む機能なので、
+         いくつで撮っているかを取り違えると画面の読みそのものが変わる。グリッドの
+         間隔を出さないのは、キャンバスの目盛り（軸の「何 m」）から読めるため。
+       左半分＝ON/OFF、右の▾＝設定 -->
+  <div class="btn-split">
+    <button class="sim-btn topbar-icon" id="btn-grid" onclick="toggleGrid()"
+            title="グリッドスナップ：グリッドに合わせて配置する（ON/OFF）"><svg class="ti"><use href="#ti-gridsnap"/></svg><span class="lbl"> グリッドスナップ</span></button>
+    <button class="sim-btn" id="btn-gridsize" onclick="toggleGridSizeMenu(event)"
+            title="グリッド線の間隔を変える"><svg class="ti"><use href="#ti-caret"/></svg></button>
+  </div>
+  <button class="sim-btn topbar-icon" id="btn-osnap" onclick="toggleObjSnap()"
+          title="物体スナップ：頂点・辺の中点・中心に吸着する（ON/OFF）"><svg class="ti"><use href="#ti-objsnap"/></svg><span class="lbl"> 物体スナップ</span></button>
+  <!-- ★ストロボ表示（多重露光）。グリッドと同じで「本体ボタン＋設定メニュー」の2つに分ける -->
+  <div class="btn-split">
+  <button class="sim-btn" id="btn-strobe" onclick="toggleStrobe()"
+          title="ストロボ：一定時間ごとに物体の形をその場に残します（ストロボ写真）。&#10;間隔が速さそのものなので、等速なら等間隔、等加速度なら等差数列で開き、放物運動では「水平は等間隔・鉛直だけ開く」が読み取れます。&#10;物理には一切影響しません"><svg class="ti"><use href="#ti-strobe"/></svg><span class="lbl"> ストロボ</span> <span id="btn-strobe-int">0.1s</span></button>
+  <button class="sim-btn" id="btn-strobeset" onclick="toggleStrobeMenu(event)"
+          title="ストロボの間隔と対象を変える"><svg class="ti"><use href="#ti-caret"/></svg></button>
+  </div>
+  <!-- ★カメラ。左のツールバーは「キャンバスに置くもの」だけの場所で、カメラは物体に
+       接続するものなので筋が違う（一度ツールとして置いてみて、そこだけ浮いた）。
+       「選んだ物体を追う」（中心の決め方・ズームアウト・追う速さ）もこの窓に入っている。 -->
+  <!-- ★.btn-split で括る。ポップオーバーは「押したボタンの親の枠」の隣に出るので、
+       裸で置くとトップバー全体が親になり、窓が画面の左端まで飛ぶ（実際そうなった）。 -->
+  <div class="btn-split">
+  <button class="sim-btn topbar-icon" id="btn-follow" onclick="toggleSimPopover('camera', this)"
+          title="カメラ：画面がどこを見るかを決めます。&#10;・1つの物体に接続：その物体の目で見る。向きの決め方は2つ：&#10;・カメラは常に y 軸正を向く（画面の上はいつも世界の上）&#10;・物体の向きによってカメラの向きも変わる（物体と一緒に画面ごと回る＝回転する観測者の視点）&#10;・選んだ物体を追う：何台でも。画面から出ないよう画面がついていく（向きは回さない）&#10;2つは同時には入りません（入れたほうが勝ちます）&#10;★物理は何も変わりません。変わるのは見る側だけです"><svg class="ti"><use href="#ti-camera"/></svg><span class="lbl"> カメラ</span></button>
+  </div>
+  <!-- ★チュートリアルへ1発で飛ぶ（2026-09-28、ユーザーの指示）。右端に寄せる（margin-left:auto）。
+       押すとデモ一覧を「チュートリアル」のタブで開く（js/ui/demo-browser.js の openTutorials）。 -->
+  <button class="sim-btn topbar-icon" id="btn-tutorial" onclick="openTutorials()" style="margin-left:auto"
+          title="チュートリアル：はじめての人のための操作の練習を開きます"><svg class="ti"><use href="#ti-beginner"/></svg><span class="lbl"> チュートリアル</span></button>
+</div>
+<div id="main">
+  <div id="toolbar">
+    <!-- ★編集ツールだけは固定（スクロールしない）。ツールが増えて一覧が画面に収まらないので、
+         下のほうのツールを使っている最中でも必ず編集へ戻れるようにする。 -->
+    <div class="tool-group" id="toolbar-pinned">
+      <button class="tool-btn" id="t-pointer" onclick="setTool('pointer')" title="編集">
+        <span><svg class="ti"><use href="#ti-pointer"/></svg></span><span class="label">編集</span>
+        <div class="tool-tip">編集ツール (Esc)&#10;物体・ジョイント・波源・回路・注釈など、画面のすべての要素を選び、右パネルで設定を変えます。選択枠のハンドルで拡大縮小と回転もできます。&#10;ドラッグは、つかんだものをカーソルの位置へそのまま置きます（グリッドに吸い付きます）＝ 並べる・組み立てるためのツール。&#10;★実行中に物体を運ぶと、位置は手のとおりになります（他の物体へめり込ませられます）。手で揺らして波を出すような使い方には向きません → つかむツール</div>
+      </button>
+    </div>
+    <div id="toolbar-scroll">
+    <div class="tool-group">
+      <button class="tool-btn" id="t-pan" onclick="toggleGrabMenu(event)">
+        <span><svg class="ti"><use href="#ti-pan"/></svg></span><span class="label">つかむ</span>
+        <div class="tool-tip">つかんで投げる (Space を押している間)&#10;物体を見えないばねで引っ張ります。物体は質量・接触・拘束にしたがって動く＝手で触るのに近い扱いで、重すぎるものは持ち上がりません（つかむ力の上限はツール設定）。振り回して投げる・波源として手で振るのはこちらです。&#10;つかめるのは物体と回路の部品だけ。ジョイント・波源・注釈を動かすのは編集ツールです。&#10;★Shift を押しながら動かすと、押した瞬間の向きのまま運べます（接触や衝突でも傾きません）。&#10;回転のしやすさはツール設定の「回転の減衰」で変えられます</div>
+      </button>
+      <button class="tool-btn" id="t-velocity" onclick="toggleVelocityMenu(event)">
+        <span><svg class="ti"><use href="#ti-velocity"/></svg></span><span class="label">速度</span>
+        <div class="tool-tip">速度を与える</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <button class="tool-btn" id="t-circle" onclick="toggleShapeMenu(event,'circle')">
+        <span><svg class="ti"><use href="#ti-circle"/></svg></span><span class="label">円</span>
+        <div class="tool-tip">円を描く</div>
+      </button>
+      <button class="tool-btn" id="t-box" onclick="toggleShapeMenu(event,'box')">
+        <span><svg class="ti"><use href="#ti-box"/></svg></span><span class="label">四角</span>
+        <div class="tool-tip">四角形を描く</div>
+      </button>
+      <button class="tool-btn" id="t-triangle" onclick="toggleShapeMenu(event,'triangle')">
+        <span><svg class="ti"><use href="#ti-triangle"/></svg></span><span class="label">三角</span>
+        <div class="tool-tip">直角三角形</div>
+      </button>
+      <button class="tool-btn" id="t-polygon" onclick="toggleShapeMenu(event,'polygon')">
+        <span><svg class="ti"><use href="#ti-polygon"/></svg></span><span class="label">多角形</span>
+        <div class="tool-tip">多角形を描く</div>
+      </button>
+      <button class="tool-btn" id="t-freehand" onclick="toggleShapeMenu(event,'freehand')">
+        <span><svg class="ti"><use href="#ti-freehand"/></svg></span><span class="label">フリー</span>
+        <div class="tool-tip">フリーハンド</div>
+      </button>
+      <button class="tool-btn" id="t-gear" onclick="toggleGearMenu(event)">
+        <span><svg class="ti"><use href="#ti-gear"/></svg></span><span class="label">歯車</span>
+        <div class="tool-tip">歯車・歯車コート&#10;歯車：インボリュート歯形の輪郭を持つ、ただの物体を描きます。動力は歯どうしがぶつかって伝わります。軸は軸ツールかヒンジで留めます。&#10;歯車コート：物体の面をクリックして歯を刻みます（直線＝ラック・円弧＝扇形歯車・へこんだ円弧＝内歯車）。&#10;どちらにするかは設定ウィンドウの上で切り替えます</div>
+      </button>
+      <button class="tool-btn" id="t-boolean" onclick="toggleBooleanMenu(event)">
+        <span><svg class="ti"><use href="#ti-boolean"/></svg></span><span class="label">図形和</span>
+      </button>
+      <button class="tool-btn" id="t-program" onclick="setTool('program')">
+        <span><svg class="ti"><use href="#ti-program"/></svg></span><span class="label">プログラム</span>
+        <div class="tool-tip">プログラム（きっかけ→すること）を物体か回路素子に結びつける</div>
+      </button>
+      <!-- ★リモコンはプログラムの隣に置く。プログラム＝世界が自分で動く規則、
+           リモコン＝人が今この瞬間に手を出す道具で、対になる2つ（js/app/remote.js の★） -->
+      <button class="tool-btn" id="t-remote" onclick="setTool('remote')">
+        <span><svg class="ti"><use href="#ti-remote"/></svg></span><span class="label">リモコン</span>
+        <div class="tool-tip">リモコン（動力・モーターを押している間だけ効かせる／手で動かす／設定をつまみで変える）</div>
+      </button>
+      <!-- ★測定の道具（通過カウンタ・速さの分布計・波の受信器）は1つのボタンにまとめ、窓から選ぶ（回路と同じ流儀）。
+           どちらも見る側の道具で物理に参加しない。窓の一覧は js/ui/tool-menus.js の MEASURE_TOOLS -->
+      <button class="tool-btn" id="t-measure" onclick="toggleMeasureMenu(event)">
+        <span><svg class="ti"><use href="#ti-measure"/></svg></span><span class="label">測定</span>
+        <div class="tool-tip">測定（通過カウンタ・速さの分布計・波の受信器）&#10;窓から道具を選びます。どれも物理には影響しません</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <button class="tool-btn" id="t-hinge" onclick="toggleHingeMenu(event)">
+        <span><svg class="ti"><use href="#ti-hinge"/></svg></span><span class="label">ヒンジ</span>
+        <div class="tool-tip">ヒンジ（自由に回る継ぎ手）。クリックした点に重なっているものを留めます。&#10;設定窓で留め先（重なった2つ／全部を背景へ）を選べます</div>
+      </button>
+      <button class="tool-btn" id="t-fixjoint" onclick="toggleFixjointMenu(event)">
+        <span><svg class="ti"><use href="#ti-fixjoint"/></svg></span><span class="label">溶接</span>
+        <div class="tool-tip">溶接（位置も向きも固定してくっつける）</div>
+      </button>
+      <button class="tool-btn" id="t-slinky" onclick="toggleSlinkyMenu(event)">
+        <span><svg class="ti"><use href="#ti-slinky"/></svg></span><span class="label">ばね</span>
+        <div class="tool-tip">ばねを張る（ばね定数と、理想ばねにするかを設定できます）。既定は理想ばね＝質量ゼロの教科書のばね。外すと質点がばねでつながった実体の索になり、振れば横波・押せば疎密波が伝わって物体ともぶつかります。端に制動器（通気にしたシリンダー）を付ければ、波が反射せずに消える端も組めます</div>
+      </button>
+      <button class="tool-btn" id="t-rope" onclick="toggleRopeMenu(event)">
+        <span><svg class="ti"><use href="#ti-rope"/></svg></span><span class="label">ロープ</span>
+        <div class="tool-tip">ロープ</div>
+      </button>
+      <button class="tool-btn" id="t-rod" onclick="setTool('rod')">
+        <span><svg class="ti"><use href="#ti-rod"/></svg></span><span class="label">連結棒</span>
+        <div class="tool-tip">連結棒（伸び縮みしない距離拘束）</div>
+      </button>
+      <button class="tool-btn" id="t-axle" onclick="toggleAxleMenu(event)">
+        <span><svg class="ti"><use href="#ti-axle"/></svg></span><span class="label">モーター</span>
+        <div class="tool-tip">モーター（回転速度・最大トルクを設定）</div>
+      </button>
+      <button class="tool-btn" id="t-thruster" onclick="toggleThrusterMenu(event)">
+        <span><svg class="ti"><use href="#ti-thruster"/></svg></span><span class="label">動力</span>
+        <div class="tool-tip">動力（エンジン）</div>
+      </button>
+      <button class="tool-btn" id="t-tracer" onclick="toggleTracerMenu(event)">
+        <span><svg class="ti"><use href="#ti-tracer"/></svg></span><span class="label">軌跡</span>
+        <div class="tool-tip">軌跡描画（色・残す時間を設定）</div>
+      </button>
+      <button class="tool-btn" id="t-flowfield" onclick="toggleFlowFieldMenu(event)">
+        <span><svg class="ti"><use href="#ti-flowfield"/></svg></span><span class="label">流れ</span>
+        <div class="tool-tip">ドラッグで「流れの場」（風・水流）の矩形を置く。中の物体は相対速度に応じた抗力を受け、流速に漸近します（終端速度＝流速）。&#10;★抗力係数 Cd が 0 の物体は流れを受けません（既定が0です）。物体のプロパティの「抗力」を上げてください</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <button class="tool-btn" id="t-laser" onclick="toggleLaserMenu(event)">
+        <span><svg class="ti"><use href="#ti-laser"/></svg></span><span class="label">レーザー</span>
+        <div class="tool-tip">レーザー（波長設定）</div>
+      </button>
+      <button class="tool-btn" id="t-optic" onclick="toggleOpticsMenu(event)">
+        <span><svg class="ti"><use href="#ti-optic"/></svg></span><span class="label">光学</span>
+        <div class="tool-tip">光学（レンズ・鏡）</div>
+      </button>
+      <button class="tool-btn" id="t-wave" onclick="toggleWaveMenu(event)">
+        <span><svg class="ti"><use href="#ti-wave"/></svg></span><span class="label">波源</span>
+        <div class="tool-tip">波源（波速・振動数・波長を設定）</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <!-- ★液体と気体は置き方も設定（1度に置く数・配置上限・印の色）も同じなので1つのボタンにまとめ、
+           設定ウィンドウで選ぶ（中身は別のソルバ）。アイコンは選んでいる種類で入れ替わる（syncParticleToolButton） -->
+      <button class="tool-btn" id="t-particle" onclick="toggleParticleMenu(event)">
+        <span id="t-particle-icon"><svg class="ti"><use href="#ti-fluid"/></svg></span><span class="label">流体</span>
+        <div class="tool-tip">流体（液体・気体）を描く（どちらかはツール設定ウィンドウで選びます。1度に置く数・配置上限もそこで設定）</div>
+      </button>
+      <button class="tool-btn" id="t-vessel" onclick="setTool('vessel')">
+        <span><svg class="ti"><use href="#ti-vessel"/></svg></span><span class="label">気体容器</span>
+        <div class="tool-tip">ドラッグで「閉じ込めた気体」を置く。水色の領域をクリックすると気体（P・V・T・状態変化・第一法則の帳簿）が選べます。器と蓋は普通の物体なので、それぞれ選んで質量・素材・熱容量を変えられます（蓋は軸から傾かず外れません）</div>
+      </button>
+      <!-- ★加熱と冷却は符号違いの同じ仕組みなので1つのツールにまとめ、設定ウィンドウのつまみで決める。
+           出力は符号つき（正＝加熱・負＝冷却）の1本。アイコン（♨／❄）は符号で入れ替わる（syncHeatFieldToolButton） -->
+      <button class="tool-btn" id="t-heater" onclick="toggleHeatFieldMenu(event)">
+        <span id="t-heater-icon"><svg class="ti"><use href="#ti-heat"/></svg></span><span class="label">加熱冷却</span>
+        <div class="tool-tip">ドラッグで加熱／冷却の領域を置く（出力はツール設定ウィンドウのつまみで。正で加熱・負で冷却）。指定した仕事率 [W] を、枠の内側にあるもの（物体・液体・気体の粒子・気体容器の気体）へ与え続けます（負なら奪い続けます）。指定は領域全体の出力で、浸かっている体積で按分されます。断熱のものには出入りしません</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <!-- 電磁気：電場・磁場の領域と回路 -->
+      <button class="tool-btn" id="t-efield" onclick="toggleEMFieldMenu(event,'efield')">
+        <span><svg class="ti"><use href="#ti-efield"/></svg></span><span class="label">電場</span>
+        <div class="tool-tip">電場の領域をドラッグで置く（向き・強さを設定）</div>
+      </button>
+      <button class="tool-btn" id="t-bfield" onclick="toggleEMFieldMenu(event,'bfield')">
+        <span><svg class="ti"><use href="#ti-bfield"/></svg></span><span class="label">磁場</span>
+        <div class="tool-tip">磁場の領域をドラッグで置く（向き・強さを設定）</div>
+      </button>
+      <button class="tool-btn" id="t-condrod" onclick="setTool('condrod')">
+        <span><svg class="ti"><use href="#ti-condrod"/></svg></span><span class="label">導体棒</span>
+        <div class="tool-tip">導体棒をドラッグで置く（回路のレールに重ねると起電力を生みます）</div>
+      </button>
+      <button class="tool-btn" id="t-circuit" onclick="toggleCircuitMenu(event)">
+        <span><svg class="ti"><use href="#ti-circuit"/></svg></span><span class="label">回路</span>
+        <div class="tool-tip">電気回路（導線・抵抗・電源ほか）</div>
+      </button>
+    </div>
+    <div class="tool-group">
+      <!-- 注釈：背景に置く文字と線。物理には一切参加しない（js/app/annotate.js） -->
+      <button class="tool-btn" id="t-text" onclick="toggleTextMenu(event)">
+        <span><svg class="ti"><use href="#ti-text"/></svg></span><span class="label">テキスト</span>
+        <div class="tool-tip">説明の文字を置く／書き直す（物理には影響しません）</div>
+      </button>
+      <button class="tool-btn" id="t-draw" onclick="toggleDrawMenu(event)">
+        <span><svg class="ti"><use href="#ti-draw"/></svg></span><span class="label">お絵描き</span>
+        <div class="tool-tip">補助線・図形を描く（選択・自由ペン・直線・四角・三角・丸・多角・消しゴム）（物理には影響しません）</div>
+      </button>
+    </div>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="main-canvas"></canvas>
+    <div id="overlay-info">
+      <div class="hint" id="hint-text">ツールを選んでオブジェクトを配置</div>
+      <div id="info-fps">FPS: --</div>
+    </div>
+    <!-- ★狭い画面（スマホ）でだけ出る、右パネルの引き出しを開くボタン（css の max-width: 760px・js/input/touch.js） -->
+    <button id="rp-open-btn" onclick="toggleRightPanel(true)" title="設定パネルを開く">☰ 設定</button>
+    <!-- ★物体のグラフのウィンドウは物体ごとに動的に作られる（js/ui/velgraph.js）。
+         1ウィンドウ＝1物体で、開いたあとは選択を変えても対象が切り替わらない -->
+    <!-- ★回路グラフのウィンドウは回路ごとに動的に作られる（js/ui/circuitgraph.js） -->
+  </div>
+  <div id="rightpanel">
+    <div class="rpanel-tab">
+      <button class="active" data-tab="props" onclick="rpTab('props',this)">プロパティ</button>
+      <button data-tab="world" onclick="rpTab('world',this)">全体設定</button>
+      <button data-tab="scene" onclick="rpTab('scene',this)">オブジェ</button>
+      <button id="rp-close-btn" onclick="toggleRightPanel(false)" title="パネルを閉じる">✕</button>
+    </div>
+    <div class="rpanel-body" id="rpanel-content">
+      <div id="tab-props">
+        <div class="rpanel-section">
+          <div class="rpanel-title">選択オブジェクト</div>
+          <div id="prop-bulk-note" style="display:none;font-size:11px;line-height:1.5;margin:0 0 7px;padding:5px 7px;border-radius:4px;border:1px solid var(--accent);background:rgba(79,195,247,.10)"></div>
+          <div id="prop-none" style="font-size:11px;color:var(--text2)">オブジェクトを選択してください</div>
+          <!-- ★種別が混ざった複数選択。値の欄は出さない（1種別にしか入らないため）。
+               全員に共通して効くこと＝移動・削除だけを案内し、種別を絞る導線を出す。 -->
+          <div id="prop-mixed" style="display:none;font-size:11px;line-height:1.6">
+            <div style="color:var(--text2);margin-bottom:6px">種別が混ざっています</div>
+            <div id="prop-mixed-list" style="margin-bottom:7px"></div>
+            <div id="prop-mixed-note" style="color:var(--text2)"></div>
+            <div class="material-grid" id="prop-mixed-pick" style="margin-top:7px"></div>
+          </div>
+          <div id="prop-form" style="display:none">
+            <!-- ★ピストン容器の部品（器・蓋）を選んだときだけ出る欄。
+                 器と蓋は普通の物体なので、質量・素材・熱容量・色は下のふつうの欄で扱う。
+                 ここに出すのは「気体の入れ物である」ことに由来するものだけ：
+                 器なら気体の断面積と可動域を決める寸法、蓋ならシリンダーとの摩擦。
+                 拘束（軸から傾かない・外れない）は操作できないので、注記として出す。 -->
+            <div class="prop-group" id="p-vessel-group" style="display:none">
+              <div class="prop-group-title">容器</div>
+              <div class="prop-row" id="p-vessel-bore-row"><span class="prop-label">内径 [m]</span><input class="prop-input" id="v-bore" type="number" step="0.05" min="0.05" title="器の内側の幅。中の気体の断面積 A = 内径 × 奥行き になり、蓋に働く力 (P−大気圧)×A を決めます" onchange="uiVesselGeom('bore',this.value)"></div>
+              <div class="prop-row" id="p-vessel-len-row"><span class="prop-label">内側の全長 [m]</span><input class="prop-input" id="v-len" type="number" step="0.05" min="0.1" title="蓋が動ける範囲。口には返し（止め輪）があるので、膨らみきった蓋はそこに引っかかって止まります（閉じた端も突き抜けません）" onchange="uiVesselGeom('len',this.value)"></div>
+              <div class="prop-row" id="p-vessel-wall-row"><span class="prop-label">壁の厚み [m]</span><input class="prop-input" id="v-wall" type="number" step="0.01" min="0.05" title="器の壁の厚み。外側だけが太る／細るので、内径・全長・中の気体は変わりません。器の質量は形に合わせて変わります" onchange="uiVesselGeom('wall',this.value)"></div>
+              <div class="prop-row" id="p-vessel-damp-row"><span class="prop-label">蓋の摩擦 [N·s/m]</span><input class="prop-input" id="p-gas-damp" type="number" step="50" min="0" title="蓋とシリンダーの摩擦や気体の粘性にあたる減衰。蓋の軸方向の速度に効き、奪った運動エネルギーは熱になります。&#10;0にすると気体ばねが無減衰になり、いつまでも上下に振動して P-V 図が振動のループだらけになります（実測：0だと1.6px の振れが残り続けます）。&#10;陰的に効かせているので、大きくしても発散しません" onchange="uiGasProp('damp',this.value)"></div>
+              <div class="checkbox-row" id="p-vessel-vent-row"><input type="checkbox" id="p-gas-vent" onchange="uiGasVent(this.checked)"><label for="p-gas-vent" title="シリンダーに穴を開けて外気とつなぎます。中は常に大気圧になるので、蓋に働く正味の力が 0 になり、気体ばねが消えます。&#10;残るのは上の「蓋の摩擦」だけ＝速さにだけ逆らう制動器（ダッシュポット）になります。振動を止めたいがつり合いの位置は動かしたくない、というときに使います。&#10;★「気体を抜いて真空にする」では作れません。真空にすると外から大気が押すので、正味 −大気圧×A で潰れます（内径2mなら 10kN）。&#10;通気の間は圧縮しても温まりません（外の空気と入れ替わるため）">通気（外気に開放＝制動器にする）</label></div>
+              <div id="p-vessel-note" style="font-size:10px;color:var(--text2);line-height:1.5;margin-top:4px"></div>
+            </div>
+            <div class="prop-group" id="p-gear-group" style="display:none">
+              <div class="prop-group-title">歯車</div>
+              <div class="prop-row" id="p-gear-z-row"><span class="prop-label">歯数</span><input class="prop-input" id="p-gear-z" type="number" step="1" min="6" max="200" title="歯の枚数。基準円の直径 = 歯数 × 歯の大きさ。変えると、いまかみ合っている相手とかみ合う位置へ吸い付き直します（軸などで留まっている歯車は動かさず、食い込むなら取り消します）" onchange="updateGearParam('z',this.value)"></div>
+              <div class="prop-row" id="p-gear-m-row"><span class="prop-label">歯の大きさ [cm]</span><input class="prop-input" id="p-gear-m" type="number" step="1" min="2" max="30" title="モジュール。かみ合うのは同じ大きさの歯どうしだけです" onchange="updateGearParam('m',this.value)"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">力学的性質</div>
+              <div class="prop-row" id="p-label-row"><span class="prop-label">名前</span><input class="prop-input" id="p-label" type="text" maxlength="24" placeholder="（なし）" title="グラフの窓・リモコンの窓・右クリックで、この物体を指す名前になります。空にすると「物体 #番号」と出ます" onchange="updateProp('label',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">質量 [kg]</span><input class="prop-input" id="p-mass" type="number" step="0.01" min="0.001" onchange="updateProp('mass',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">密度 [kg/m³]</span><input class="prop-input" id="p-density" type="number" step="10" min="1" title="密度を変えると質量 = 密度×面積×奥行き が再計算されます" onchange="updateDensity(this.value)"></div>
+              <div class="prop-row"><span class="prop-label">反発係数</span><input class="prop-input" id="p-restitution" type="number" step="0.05" min="0" max="1" onchange="updateProp('restitution',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">動摩擦係数<span class="u"> μ<sub>k</sub></span></span><input class="prop-input" id="p-friction" type="number" step="0.05" min="0" onchange="updateProp('friction',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">静止摩擦係数<span class="u"> μ<sub>s</sub></span></span><input class="prop-input" id="p-friction-s" type="number" step="0.05" min="0" title="滑り出す直前まではこちらが使われます。μs ≧ μk になるよう自動補正されます" onchange="updateProp('frictionStatic',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">抗力係数 Cd</span><input class="prop-input" id="p-drag" type="number" step="0.05" min="0" title="0=空気抵抗なし。球≈0.47／平板≈1.2。空気密度が0だと効きません" onchange="updateProp('drag',this.value)"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">運動の様子</div>
+              <div class="prop-row"><span class="prop-label">物体の向き [°]</span><input class="prop-input" id="p-angle" type="number" step="1" title="物体そのものの回転角（生成時が0°）。右向き0°・反時計回りが正。転がれば変わります。回転は編集ツールでのみ行えます" onchange="updateAngle(this.value)"></div>
+              <div class="prop-row"><span class="prop-label">速さ [m/s]</span><input class="prop-input" id="p-speed" type="number" step="0.1" min="0" title="速度の大きさ。ここを変えると運動の向きは保ったまま、速度X・速度Yが比例して変わります" onchange="updateSpeed(this.value)"></div>
+              <div class="prop-row"><span class="prop-label">運動の向き [°]</span><input class="prop-input" id="p-vdir" type="number" step="1" title="速度ベクトルの向き。右向き0°・反時計回りが正。ここを変えると速さは保ったまま向きだけ変わります。速さが0のときも向きは覚えているので、向きを決めてから速さを与えられます" onchange="updateVelDir(this.value)"></div>
+              <div class="prop-row"><span class="prop-label">速度X [m/s]</span><input class="prop-input" id="p-vx" type="number" step="0.1" onchange="updateProp('vx',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">速度Y [m/s]</span><input class="prop-input" id="p-vy" type="number" step="0.1" onchange="updateProp('vy',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">角速度 [rad/s]</span><input class="prop-input" id="p-av" type="number" step="0.1" onchange="updateProp('av',this.value)"></div>
+            </div>
+            <div class="prop-group" id="p-thermal-group">
+              <div class="prop-group-title">熱力学的性質</div>
+              <div class="prop-row"><span class="prop-label">温度 [℃]</span><input class="prop-input" id="p-temp" type="number" step="1" min="-273.15" title="接触している相手との間で熱が移ります。移る熱量は必ず等しいので、系全体の熱量 Σ(比熱×質量×温度) は保存します（世界タブに合計が出ます）。&#10;−273.15℃（絶対零度）より下は入れられません" onchange="updateProp('temp', C2K(parseFloat(this.value)))"></div>
+              <div class="prop-row"><span class="prop-label">比熱 c [J/(kg·K)]</span><input class="prop-input" id="p-heatcap" type="number" step="10" min="0" title="1kg の温度を1K上げるのに要る熱量。熱容量 C = 比熱 × 質量 で、大きいほど温まりにくく冷めにくくなります。&#10;例：水4182・鉄450・木1700。&#10;0にするとその物体は熱をやりとりしません（＝温度が変わらない断熱物体）" onchange="updateProp('heatCap',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">熱伝導率 k [W/(m·K)]</span><input class="prop-input" id="p-conduct" type="number" step="0.1" min="0" title="熱の通しやすさ。接触した2物体の間では熱抵抗が直列に足されるので（1/U = L₁/k₁A + L₂/k₂A）、断熱材のほうが自動的に効きます。&#10;例：鉄50・水0.6・木0.15・スポンジ0.04。&#10;0にすると完全な断熱材になります" onchange="updateProp('conduct',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">放射率 ε</span><input class="prop-input" id="p-emissivity" type="number" step="0.05" min="0" max="1" title="熱放射（電磁波として熱を出し入れする）の強さ。0〜1で、0だと放射しません。&#10;伝導や対流と違って間に何も要らないので、真空を隔てても伝わります。P = εσA(T⁴−T₀⁴) のステファン・ボルツマンの法則で、温度の4乗で効きます。&#10;例：黒く塗った面0.95・木0.9・酸化した鉄0.7・磨いたアルミ0.05。&#10;★既定は0です。実物どおりの値を既定にすると、温めた物体がどのシーンでも勝手に冷え始めるためで、使うときだけ入れてください。&#10;相手は「まわりの温度」（世界タブ）と、見えている他の物体です。間に物体があれば遮られます" onchange="updateProp('emissivity',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">熱容量 C [J/K]</span><input class="prop-input" id="p-heatcap-total" type="number" readonly title="比熱 × 質量。この物体を1K温めるのに要る熱量です（計算結果なので編集できません）"></div>
+              <div class="checkbox-row" id="p-tempfixed-row"><input type="checkbox" id="p-tempfixed" onchange="updateProp('tempFixed',this.checked)"><label for="p-tempfixed" title="熱容量が無限大の理想的な熱源／冷源として扱います（氷水や加熱板）。&#10;いくら熱を出し入れしても温度が変わりません。&#10;出入りした熱は世界タブの「熱源が与えた熱」に別勘定で積まれるので、系の熱量の台帳は閉じたままです">恒温にする（温度が変わらない熱源）</label></div>
+            </div>
+            <!-- 気体分子が叩いている面の圧力。分子気体に触れている物体だけに出る -->
+            <div id="p-molgas-group">
+              <div style="font-size:11px;font-weight:700;color:var(--accent);margin:8px 0 4px">気体分子から受ける力</div>
+              <div class="prop-row"><span class="prop-label">合力 [N]</span><input class="prop-input" id="p-mol-force" type="text" readonly title="気体分子がこの物体を叩いて生じている力の合計です。&#10;浮かんだ蓋なら、これが蓋の重さと釣り合います"></div>
+              <div class="prop-row"><span class="prop-label">圧力 [Pa]</span><input class="prop-input" id="p-mol-press" type="text" readonly title="いちばん強く押されている面の圧力＝その面が受けた力 ÷ その面の面積。&#10;圧力とは「分子が壁を叩く力積の時間平均」そのものです。&#10;面ごとに分けて数えているので、外側が乾いている面は含みません"></div>
+              <div class="prop-row"><span class="prop-label">面ごと [Pa]</span><input class="prop-input" id="p-mol-faces" type="text" readonly title="物体から見た 左／右／上／下 の各面が受けている圧力です。&#10;気体が片側にしか無ければ、その面だけに値が出ます"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">波動的性質</div>
+              <div class="prop-row" id="p-ior-row"><span class="prop-label">光屈折率 n<sub>d</sub></span><input class="prop-input" id="p-ior" type="number" step="0.05" min="0" title="d線(587.6nm)での屈折率（光に対して）。1より大きいと透明（レーザーが屈折して透過）／0以下は不透明。例：ガラス1.52・水1.33。波に対する屈折率は下の「波屈折率」で別に設定します" onchange="updateProp('ior',this.value)"></div>
+              <div class="prop-row" id="p-refl-row"><span class="prop-label">反射率 R [%]</span><input class="prop-input" id="p-refl" type="number" step="1" min="0" max="100" title="界面で反射する光の割合。残りは、透明な物体（屈折率&gt;1）なら屈折して進み、不透明なら吸収されます。鏡100＝全反射／鏡50＝ハーフミラー。フレネル自動計算がONの物体では入射角から自動で決まるため入力できません" onchange="updateReflectance(this.value)"></div>
+              <div class="checkbox-row" id="p-fresnel-row" style="display:none"><input type="checkbox" id="p-fresnel" onchange="updateFresnel(this.checked)"><label for="p-fresnel" title="反射率を入射角と屈折率からフレネルの式で計算します。垂直入射では数%、浅い角度では100%に近づくという実際の振る舞いになり、水滴では虹（主虹≒5%・副虹≒0.3%）が正しい明るさで現れます">フレネルの式で反射率を自動計算</label></div>
+              <div class="checkbox-row" id="p-dispersion-row" style="display:none"><input type="checkbox" id="p-dispersion" onchange="updateDispersion(this.checked)"><label for="p-dispersion" title="波長ごとに屈折率を変えます（コーシーの式）。白色光をプリズムや水滴に当てると虹に分かれます。分かれ方の大きさは下のアッベ数で決まります">波長により屈折率を変える（分散）</label></div>
+              <div class="prop-row" id="p-abbe-row" style="display:none"><span class="prop-label">アッベ数 V<sub>d</sub></span><input class="prop-input" id="p-abbe" type="number" step="1" min="1" max="100" title="分散の小ささを表す値。V_d＝(n_d−1)/(n_F−n_C) なので、大きいほど波長による屈折率差が小さく虹が開きません。クラウン≈64／フリント≈36／重フリント≈26" onchange="updateProp('abbe',this.value)"></div>
+              <div class="prop-row" id="p-opticlen-row" style="display:none"><span class="prop-label">長さ [m]</span><input class="prop-input" id="p-opticlen" type="number" step="0.05" min="0.05" title="レンズ・鏡・格子・スクリーンの端から端までの長さ（開口）。拡大縮小ツールと違い、焦点距離は変わりません（球面で作れない短さなら焦点距離を押し上げます）" onchange="updateOpticLength(this.value)"></div>
+              <div class="checkbox-row" id="p-screenprof-row" style="display:none"><input type="checkbox" id="p-screenprof" onchange="updateScreenProfile(this.checked)"><label for="p-screenprof" title="スクリーンに当たった光の強さの分布を、スクリーンの横にグラフで描きます。そのスクリーンの最大値を1とした相対値です">強度の分布を描く</label></div>
+              <div class="checkbox-row" id="p-optic-ideal-row" style="display:none"><input type="checkbox" id="p-optic-ideal" onchange="updateOpticIdeal(this.checked)"><label for="p-optic-ideal" title="球面をスネルの法則で解く代わりに、薄肉レンズの光線変換だけをかけます。&#10;光軸に平行な光は必ず焦点を通り、中心を通る光は曲がらず、1点から出た光は厳密に1点へ集まります（1/a + 1/b = 1/f がどの光線でも成り立つ）。&#10;★ONとOFFを見比べると、実物の球面レンズでは周辺の光が焦点より手前で交わること（球面収差）がそのまま見えます。&#10;理想化すると色収差もゼロ・損失もゼロになるので、屈折率・分散・反射率の設定は使われません。&#10;形も教科書の記号（矢羽根付きの薄い棒）に変わります：外向き＝集光／末広がり＝発散">理想レンズ・理想鏡にする（収差なし）</label></div>
+              <div class="prop-row" id="optic-focal-row" style="display:none"><span class="prop-label">焦点距離 [m]</span><input class="prop-input" id="p-focal" type="number" step="0.01" onchange="updateOpticFocal(this.value)"></div>
+              <div class="prop-row" id="p-slitn-row" style="display:none"><span class="prop-label">スリット数 N</span><input class="prop-input" id="p-slitn" type="number" step="1" min="1" max="20" title="板の中央に並ぶスリットの本数。&#10;N=2 がヤングの二重スリット、N を増やすほど明線が鋭くなって回折格子になります。&#10;★N 本ぶんの波面をそれぞれ扇状に追うので、増やすほど重くなります（上限20本）。明線の鋭さは10本もあればほぼ出そろいます" onchange="updateSlit('slitN',this.value)"></div>
+              <div class="prop-row" id="p-slitd-row" style="display:none"><span class="prop-label">スリット間隔 d [m]</span><input class="prop-input" id="p-slitd" type="number" step="0.05" min="0.01" title="隣り合うスリットの中心間の距離＝格子定数 d。&#10;明線の向きは d·sinθ = mλ で決まるので、d を狭めるほど次数が大きく開きます。&#10;★d が波長より短いと1次すら存在しません（sinθ>1）。この画面では λ(633nm) = 0.127 m です" onchange="updateSlit('slitD',this.value)"></div>
+              <div class="prop-row" id="p-slita-row" style="display:none"><span class="prop-label">スリット幅 a [m]</span><input class="prop-input" id="p-slita" type="number" step="0.01" min="0.005" title="1本のスリットの開口幅 a（a ≤ d）。&#10;単一スリットの回折 sinc²(πa·sinθ/λ) として、次数ごとの明るさ＝包絡線を決めます。&#10;★d/a が整数のとき、その次数はちょうど包絡線の零点に重なって消えます（欠落次数）。a を狭めるほど光は広い角度へ広がります" onchange="updateSlit('slitA',this.value)"></div>
+              <div class="prop-row" id="p-slitm-row" style="display:none"><span class="prop-label">開口の分割数 M</span><input class="prop-input" id="p-slitm" type="number" step="1" min="0" max="16" title="1本のスリットを何個の波源として扱うか。0＝自動。&#10;★物理の設定ではなく計算の細かさです。分割数によらず遠方の模様は同じになります。&#10;M=1 でも単一スリットの回折は正しく出ます：幅 a の開口が作る sinc(πa·sinθ/λ) を式として掛けているので、1個の波源が「幅 a の開口そのもの」を表しています（＝無限個に分けた極限と厳密に一致）。&#10;分けると変わるのは近接場（開口から a²/λ 以内）だけなので、自動では a が波長より広いときにだけ分割します。&#10;★大きくすると、ホイヘンスの原理どおり「多数の点波源の和として単一スリットの回折が立ち上がる」様子そのものを見せられます。波面の数だけ重くなります" onchange="updateSlit('slitM',this.value)"></div>
+              <div id="p-slit-note" style="display:none;font-size:10px;color:var(--text2);margin:-2px 0 5px 2px;line-height:1.5"></div>
+              <div class="prop-row"><span class="prop-label">波に対する扱い</span>
+                <select class="prop-select" id="p-wavemode" onchange="updateWaveMode(this.value)">
+                  <option value="pass">素通り（波に無関係）</option>
+                  <option value="medium">媒質（屈折する）</option>
+                  <option value="fixed">固定端反射</option>
+                  <option value="free">自由端反射</option>
+                  <option value="absorb">無反射（吸収する）</option>
+                </select>
+              </div>
+              <div class="prop-row" id="p-waveior-row" style="display:none"><span class="prop-label">波屈折率 n</span><input class="prop-input" id="p-waveior" type="number" step="0.05" min="0.1" title="波に対する屈折率。基準波速 c₀ に対して n = c₀ / (この媒質での波速)。光と同じ n₁sinθ₁ = n₂sinθ₂ で屈折します。n>1 で内側に曲がり、n<1 で臨界角を超えると全反射します" onchange="updateProp('waveIor',this.value)"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">電磁気的性質</div>
+              <div class="prop-row"><span class="prop-label">電荷 q [C]</span><input class="prop-input" id="p-charge" type="number" step="0.1" title="正負の電荷。電場の領域の中で F = qE を受け、磁場の中でローレンツ力を受けます。電荷同士のクーロン力 F = kq₁q₂/r² は既定でONです（同符号は反発し、異符号は引き合います）。下の行から切り替えられます" onchange="updateCharge(this.value)"></div>
+              <div id="p-charge-note" style="display:none;font-size:10px;color:var(--text2);margin:-2px 0 5px 2px"></div>
+              <div id="p-conductor-note" style="display:none;font-size:10px;color:#ffca28;margin:2px 0 5px 2px"></div>
+              <div class="checkbox-row" id="p-fieldsrc-row" style="display:none"><input type="checkbox" id="p-fieldsrc" onchange="updateProp('fieldSource',this.checked)"><label for="p-fieldsrc" title="外すと、この電荷は電気力線・等電位線の絵から除かれます。表示だけの操作で、クーロン力はこれまでどおり全電荷どうしで働きます。&#10;源を1個に絞ると「電荷がつくる場」と「そこに置いた電荷が受ける力」を分けて見せられます（試験電荷の図）">電気力線の源にする</label></div>
+            </div>
+            <!-- ★ここから下は、物体を右クリックしても同じものが出せる項目。
+                 いつも使う「その物体がどんな物か」（力学・熱・波動・電磁気）を上に集め、
+                 右クリックから届くもの（動きの制限・衝突・表示・グラフ）は下へ寄せてある。 -->
+            <div class="prop-group">
+              <div class="prop-group-title">動きの制限</div>
+              <div class="checkbox-row"><input type="checkbox" id="p-static" onchange="updateProp('isStatic',this.checked)"><label for="p-static">背景に固定</label></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-constvel" onchange="updateProp('constVel',this.checked)"><label for="p-constvel">一定の速度で動かし続ける</label></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-hasgravity" onchange="updateProp('hasGravity',this.checked)"><label for="p-hasgravity" title="外すと、この物体には重力（一様な重力も万有引力も）がはたらきません。導体の中を動く電荷のように、重さを無視したい粒を作るときに使います">重力を受ける</label></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-fixrot" onchange="updateProp('fixedRotation',this.checked)"><label for="p-fixrot">回転しない</label></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-guide" onchange="updateGuideEnabled(this.checked)"><label for="p-guide">運動方向固定</label></div>
+              <div class="prop-row" id="p-guide-row" style="display:none"><span class="prop-label">動ける向き [°]</span><input class="prop-input" id="p-guideangle" type="number" step="1" title="この向きの直線上だけを動きます。右向き0°・反時計回りが正" onchange="updateGuideAngle(this.value)"></div>
+              <div class="material-grid" id="guide-preset-grid" style="display:none;margin-bottom:5px"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">衝突</div>
+              <div class="prop-label cb-sub">衝突レイヤー</div>
+              <div class="layer-grid">
+                <div class="checkbox-row"><input type="checkbox" id="p-layer1" onchange="updateLayer(1,this.checked)"><label for="p-layer1"><span class="layer-chip" style="background:#42a5f5"></span>1</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="p-layer2" onchange="updateLayer(2,this.checked)"><label for="p-layer2"><span class="layer-chip" style="background:#66bb6a"></span>2</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="p-layer3" onchange="updateLayer(3,this.checked)"><label for="p-layer3"><span class="layer-chip" style="background:#ffa726"></span>3</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="p-layer4" onchange="updateLayer(4,this.checked)"><label for="p-layer4"><span class="layer-chip" style="background:#ab47bc"></span>4</label></div>
+              </div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">表示</div>
+              <div class="checkbox-row"><input type="checkbox" id="p-showforces" onchange="updateProp('showForces',this.checked)"><label for="p-showforces">力を表示</label></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-showvelocity" onchange="updateProp('showVelocity',this.checked)"><label for="p-showvelocity">速度を表示</label></div>
+              <div class="prop-row"><span class="prop-label">力矢印の長さ</span><input class="prop-input" id="p-fviz" type="number" step="0.1" min="0.001" max="20000" title="力ベクトルの矢印の長さ [画面px / 1N]。※これは全体設定で、すべての物体の矢印に効きます" onchange="worldForceScale(this.value)"></div>
+              <div class="prop-row"><span class="prop-label">速度矢印の長さ</span><input class="prop-input" id="p-vviz" type="number" step="1" min="1" max="50" title="速度ベクトルの矢印の長さ [画面px / (1m/s)]。※これは全体設定で、すべての物体の矢印に効きます" onchange="worldVelScale(this.value)"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">グラフ</div>
+              <button class="btn-small" id="p-graph-btn" style="width:100%" onclick="toggleVelGraph()" title="選択中の物体の 変位・速度・加速度 の時間変化を表示します。ウィンドウはその物体の記録を持ち続けるので、別の物体を選んでも切り替わりません（複数選べば、その数だけ並べて見比べられます）">変位・速度・加速度</button>
+              <button class="btn-small" id="p-enegraph-btn" style="width:100%;margin-top:4px" onclick="toggleEnergyGraph()" title="選択した物体をひとまとめの「系」として、運動エネルギー・重力による位置エネルギー・それらの和の時間変化を表示します">エネルギー</button>
+              <button class="btn-small" id="p-momgraph-btn" style="width:100%;margin-top:4px" onclick="toggleMomGraph()" title="選んだ物体をひとまとめの「系」として、運動量 p = Σmv の時間変化を成分ごとに表示します">運動量</button>
+              <button class="btn-small" id="p-tempgraph-btn" style="width:100%;margin-top:4px" onclick="toggleTempGraph()" title="選択した物体の温度の時間変化を、1枚に重ねて表示します。液体・気体があれば、その平均温度も系列として一緒に描きます（熱いおもりを水に入れて、両方が同じ温度へ近づく様子をそのまま見られます）。&#10;あとから比べたい物体が増えたら、別の窓を開かずグラフの「＋選択を追加」を押してください（足した時点から線が始まります）。右クリック →「グラフを表示」からも開けます">温度</button>
+              <button class="btn-small" id="p-tempadd-btn" style="width:100%;margin-top:4px" onclick="ctxAddToTempGraph()" title="新しい窓を開かず、いちばん新しい温度グラフへ系列として足します。足した時点から線が始まります">温度：開いているグラフに追加</button>
+              <button class="btn-small" id="p-wavegraph-btn" style="width:100%;margin-top:4px" onclick="toggleWaveGraph()" title="その物体の位置で水面波の変位を読み、y-t のグラフと、そこから測った振動数を描きます。振動数は上向きのゼロ交差の間隔（f = 1/T）です">波の受信（y-t と振動数）</button>
+            </div>
+          </div>
+          <div id="joint-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">ジョイントを選択中</div>
+            <div class="prop-row"><span class="prop-label">種類</span><span id="j-type" style="font-size:11px;color:var(--text)"></span></div>
+            <div class="prop-row" id="j-row-stiff"  style="display:none"><span class="prop-label">ばね定数 [N/m]</span><input class="prop-input" id="j-stiffness" type="number" step="1" min="0" onchange="updateJointProp('stiffness',this.value)"></div>
+            <div class="prop-row" id="j-row-damp"   style="display:none"><span class="prop-label">減衰 c [N·s/m]</span><input class="prop-input" id="j-damping" type="number" step="0.1" min="0" onchange="updateJointProp('damping',this.value)"></div>
+            <div class="prop-row" id="j-row-zeta"   style="display:none"><span class="prop-label">減衰比 ζ</span><input class="prop-input" id="j-zeta" type="number" step="0.01" min="0" onchange="updateJointZeta(this.value)"></div>
+            <div id="j-damp-hint" style="display:none;font-size:10px;color:var(--text2);line-height:1.5;margin:-1px 0 7px 0"></div>
+            <div class="prop-row" id="j-row-rest"   style="display:none"><span class="prop-label">自然長 [m]</span><input class="prop-input" id="j-restlen" type="number" step="0.05" min="0" onchange="updateJointProp('restLength',this.value)"></div>
+            <div class="prop-row" id="j-row-max"    style="display:none"><span class="prop-label">長さ [m]</span><input class="prop-input" id="j-maxlen" type="number" step="0.05" min="0.01" onchange="updateJointProp('maxLength',this.value)"></div>
+            <div class="prop-row" id="j-row-radius" style="display:none"><span class="prop-label">半径 [m]</span><input class="prop-input" id="j-radius" type="number" step="0.005" min="0.005" onchange="updateJointProp('radius',this.value)"></div>
+            <div class="prop-row" id="j-row-lden"   style="display:none"><span class="prop-label">線密度 [kg/m]</span><input class="prop-input" id="j-linden" type="number" step="0.05" min="0.01" onchange="updateJointProp('linDensity',this.value)"></div>
+            <div class="prop-row" id="j-row-friction" style="display:none"><span class="prop-label">摩擦係数 μ</span><input class="prop-input" id="j-friction" type="number" step="0.05" min="0" title="ロープ表面の摩擦。接触する物体側の摩擦係数と掛け合わされます（物体側が0だと合計も0になります）" onchange="updateJointProp('friction',this.value)"></div>
+            <div class="prop-row" id="j-row-mspeed" style="display:none"><span class="prop-label">回転速度 [rad/s]</span><input class="prop-input" id="j-mspeed" type="number" step="0.5" onchange="updateJointProp('motorSpeed',this.value)"></div>
+            <div class="prop-row" id="j-row-mtorque" style="display:none"><span class="prop-label">最大トルク [N·m]</span><input class="prop-input" id="j-mtorque" type="number" step="10" min="0" onchange="updateJointProp('motorTorque',this.value)"></div>
+            <div class="checkbox-row" id="j-row-mbrake" style="display:none"><input type="checkbox" id="j-mbrake" onchange="updateJointMotorBrake(this.checked)"><label for="j-mbrake" title="リモコンを放したときの動き。切＝軸が自由になり惰性で回ります（車輪はこちら）。入＝その姿勢のまま止まります（荷を載せた台を少しずつ動かすときはこちら。最大トルクを超える荷には負けます）">放したら止める</label></div>
+            <div class="checkbox-row" id="j-row-alimit" style="display:none"><input type="checkbox" id="j-alimit" onchange="updateJointAngleLimit(this.checked)"><label for="j-alimit" title="相対角を下限〜上限の間に収めます。0° は取り付けたときの姿勢、反時計回りが正。ひざ・ひじのように片側にしか曲がらない継ぎ目に">可動域を制限する</label></div>
+            <div class="prop-row" id="j-row-alo" style="display:none"><span class="prop-label">下限 [°]</span><input class="prop-input" id="j-alo" type="number" step="5" min="-180" max="180" onchange="updateJointLimitDeg('lo',this.value)"></div>
+            <div class="prop-row" id="j-row-ahi" style="display:none"><span class="prop-label">上限 [°]</span><input class="prop-input" id="j-ahi" type="number" step="5" min="-180" max="180" onchange="updateJointLimitDeg('hi',this.value)"></div>
+            <div id="j-angle-hint" style="display:none;font-size:10px;color:var(--text2);line-height:1.5;margin:-1px 0 7px 0"></div>
+            <div class="prop-row" id="j-row-mch" style="display:none"><span class="prop-label">回路で駆動 ch</span><input class="prop-input" id="j-mch" type="number" step="1" min="0" title="0＝上の回転速度で駆動（従来どおり）。1以上にすると、同じ番号の「モーター端子」に流れる電流がトルクになり、回転すると逆起電力を返します（外から回せば発電機）" onchange="updateJointProp('motorCh',this.value)"></div>
+            <div id="j-row-pinmode" style="display:none;margin:2px 0 8px 0">
+              <div class="prop-label" style="margin-bottom:2px">留め先</div>
+              <label class="checkbox-row" style="margin:0"><input type="radio" name="j-pinmode" id="j-pinmode-pair" onchange="if(this.checked)setPinModeOf(joints.find(x=>x.id===selectedJointId),'pair')"><span>重なった2つをつなぐ</span></label>
+              <label class="checkbox-row" style="margin:0"><input type="radio" name="j-pinmode" id="j-pinmode-board" onchange="if(this.checked)setPinModeOf(joints.find(x=>x.id===selectedJointId),'board')"><span>重なったものを全部、背景に留める</span></label>
+              <div id="j-pinmode-hint" style="font-size:10px;color:var(--text2);line-height:1.5"></div>
+            </div>
+            <div class="checkbox-row" id="j-row-release" style="display:none"><input type="checkbox" id="j-releasable" onchange="updateJointReleasable(this.checked)"><label for="j-releasable">速度ツールで解放する</label></div>
+            <!-- ★ロープの先端おもり。背景に固定した端（＝動かせない端）にだけ出す -->
+            <div id="j-row-tip" style="display:none">
+              <div class="prop-label cb-sub" style="margin-top:6px" title="背景に固定した端は動かせません。小さなおもりを付けると、その端をつかむツールで引っ張れます（滑車にかけたロープの端など）。おもりは回転せず、ロープを削除すると一緒に消えます">先端おもり（掴んで引くための取っ手）</div>
+              <button class="btn-small" id="j-tip-a" style="width:100%;margin-bottom:4px" onclick="addRopeTipFromPanel('A')">端Aに先端おもりを付ける</button>
+              <button class="btn-small" id="j-tip-b" style="width:100%" onclick="addRopeTipFromPanel('B')">端Bに先端おもりを付ける</button>
+            </div>
+            <div id="j-row-layers" style="display:none">
+              <div class="prop-label cb-sub" style="margin-top:6px">衝突レイヤー</div>
+              <div class="layer-grid">
+                <div class="checkbox-row"><input type="checkbox" id="j-layer1" onchange="updateJointLayer(1,this.checked)"><label for="j-layer1"><span class="layer-chip" style="background:#42a5f5"></span>1</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="j-layer2" onchange="updateJointLayer(2,this.checked)"><label for="j-layer2"><span class="layer-chip" style="background:#66bb6a"></span>2</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="j-layer3" onchange="updateJointLayer(3,this.checked)"><label for="j-layer3"><span class="layer-chip" style="background:#ffa726"></span>3</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="j-layer4" onchange="updateJointLayer(4,this.checked)"><label for="j-layer4"><span class="layer-chip" style="background:#ab47bc"></span>4</label></div>
+              </div>
+            </div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedJoint()">このジョイントを削除</button>
+          </div>
+            <div id="laser-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">レーザーを選択中</div>
+            <div class="prop-row">
+              <span class="prop-label">向き [°]</span>
+              <input class="prop-input" id="laser-angle" type="number" step="1"
+                     title="レーザーが進む向き。右向き0°・反時計回りが正です。&#10;物体に取り付けたレーザーも、画面上で見えている向きで指定します（内部では取り付け先に対する相対角として保持します）。&#10;まとめて選んでいれば、全部を同じ向きにそろえられます"
+                     onchange="updateLaserAngle(this.value)">
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">波長 [nm]</span>
+              <input class="prop-input" id="laser-wl" type="number" step="1" min="380" max="780"
+                     title="可視光は約380〜780nm。物体の「波長により屈折率を変える」がONだと、波長ごとに屈折率が変わります"
+                     onchange="updateLaserWavelength(this.value)">
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">表示色</span>
+              <div class="color-swatch" id="laser-color-swatch" title="波長から自動計算されます（色は指定できません）"></div>
+              <span id="laser-wl-note" style="font-size:10px;color:var(--text2)"></span>
+            </div>
+            <div class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="laser-white" onchange="updateLaserWhite(this.checked)"><label for="laser-white" title="1本のレーザーが波長プリセットの全色を同時に出します。水滴やプリズムに当てると分散して色が分かれます。ONの間は波長の指定はできません">白色光（プリセット全色）</label></div>
+            <div class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="laser-interact-host" onchange="updateLaserInteractHost(this.checked)"><label for="laser-interact-host" title="ONにすると、レーザーを取り付けた物体の表面でも屈折・反射します。水中に置いた光源が水面で屈折して出る／全反射する様子を見せられます">取り付けた物体と干渉させる</label></div>
+
+            <div class="rpanel-title" style="margin-top:8px">ビームの幅</div>
+            <div class="prop-row">
+              <span class="prop-label">幅 [m]</span>
+              <input class="prop-input" id="laser-width" type="number" step="0.05" min="0" max="20"
+                     title="ビームの太さ。0 なら従来どおり太さのない1本を出します。&#10;発射点は進行方向に垂直な線分上に等間隔で並ぶので、束全体がひとつの平面波になります。&#10;「細いレーザーを並べる」では、本数はそのままで間隔だけが変わります（本数2ならこの幅がそのままスリット間隔 d です）"
+                     onchange="updateLaserWidth(this.value)">
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">出力形式</span>
+              <select class="prop-input" id="laser-beam-mode" onchange="updateLaserBeamMode(this.value)"
+                      title="細いレーザーを並べる：隙間は本物です（N個の細い光源＝多スリットに相当）&#10;太い一本：幅を持つ連続した開口です。レイは開口を刻んだ標本にすぎず、隙間は存在しません&#10;&#10;「太い一本」は「並べたもの」を密にした極限そのものですが、見た目は一致しません（並べたほうはどこまで密にしても隙間が残るのが正しい姿です）">
+                <option value="array">細いレーザーを並べる</option>
+                <option value="solid">太い一本</option>
+              </select>
+            </div>
+            <div class="prop-row" id="laser-count-row">
+              <span class="prop-label">本数 [本]</span>
+              <input class="prop-input" id="laser-count" type="number" step="1" min="1" max="64"
+                     title="幅いっぱいに等間隔で並べる本数。間隔は d = 幅 ÷ (本数−1) です（2本ならこの幅がそのままスリット間隔 d）。&#10;★これは刻みの細かさではなく物理の設定です。N 本は N 個の独立した細い光源そのもので、本数を変えると干渉の結果も変わります。&#10;★回折は扱っていないので、並べた光は広がらずまっすぐ進みます。平行なままの光どうしは重ならず、干渉縞も出ません。&#10;縞を見るには、レンズ・鏡・プリズムで光路を交差させるか、幅のある「太い一本」を重ねてください"
+                     onchange="updateLaserRayNum(this.value)">
+            </div>
+            <div id="laser-ray-note" style="font-size:10px;color:var(--text2);margin:2px 0 0 2px"></div>
+
+            <div class="rpanel-title" style="margin-top:8px">干渉</div>
+            <div class="checkbox-row"><input type="checkbox" id="laser-coherent" onchange="updateLaserCoherent(this.checked)"><label for="laser-coherent" title="ONにすると光に位相を持たせ、重なったところで強め合い・弱め合いを計算します（コヒーレント光）。&#10;OFFのときは強度をそのまま足します（電球のような非可干渉光）＝従来の動作です。&#10;位相は色には出ません。レーザーの色はあくまで波長で決まります&#10;&#10;★干渉するのは同じレーザーから出た光どうしだけです。別々に置いた2台は干渉しません（独立した2つの光源は相対位相が揺らぐため、実際にも縞は立ちません）。&#10;1台を分けた2本を交差させたいときは、ハーフミラー（反射をONにして反射率0.5）で光路を2つに分けてください。マイケルソン干渉計になります">位相を持たせて干渉させる</label></div>
+            <div id="laser-if-note" style="font-size:10px;color:var(--text2);margin:2px 0 0 2px;line-height:1.5"></div>
+
+            <div class="rpanel-title" style="margin-top:8px">波長プリセット</div>
+            <div class="material-grid" id="laser-preset-grid"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">このレーザーを削除</button>
+          </div>
+          <div id="thruster-form" style="display:none">
+            <div id="thruster-title" style="font-size:11px;color:var(--text2);margin-bottom:6px">動力（エンジン）を選択中</div>
+            <div class="prop-row"><span class="prop-label">推力 [N]</span><input class="prop-input" id="thruster-force" type="number" step="10" min="0" onchange="updateThrusterForce(this.value)"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この動力を削除</button>
+          </div>
+          <div id="tracer-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">軌跡を選択中</div>
+            <div class="prop-row">
+              <span class="prop-label">色</span>
+              <div class="color-swatch" id="tracer-color-swatch" onclick="openColorPicker(this,'tracer')"></div>
+            </div>
+            <div class="prop-row"><span class="prop-label">残す時間 [s]</span><input class="prop-input" id="tracer-duration" type="number" step="0.5" min="0.5" max="60" title="この秒数より古い軌跡は消えます（シミュレーション時間が基準。速度倍率に連動します）" onchange="updateTracerDuration(this.value)"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この軌跡を削除</button>
+          </div>
+          <div id="arcoat-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">反射防止コートを選択中</div>
+            <div class="prop-row"><span class="prop-label">覆っている割合</span><span class="prop-value" id="arcoat-frac">-</span></div>
+            <div style="font-size:10px;color:var(--text2);line-height:1.5;margin-top:6px">
+              この面での反射が 0 になります（実物のレンズや窓に蒸着してある無反射コーティングと同じ）。<br>
+              <b>両端の丸をドラッグ</b>すると、覆う範囲が輪郭に沿って伸び縮みします。<br>
+              ※全反射には効きません（臨界角の話なので膜では消せません）。
+            </div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">このコートを外す</button>
+          </div>
+          <div id="wave-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">波源を選択中</div>
+            <div class="prop-row"><span class="prop-label">振動数 f [Hz]</span><input class="prop-input" id="ws-freq" type="number" step="0.1" min="0.05" onchange="updateWaveSourceProp('freq',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">波長 λ [m]</span><input class="prop-input" id="ws-lambda" type="number" step="0.05" min="0.01" title="λ = v/f。ここを変えると振動数のほうが書き換わります（保存されるのは f）" onchange="updateWaveSourceLambda(this.value)"></div>
+            <div class="prop-row"><span class="prop-label">振幅 A</span><input class="prop-input" id="ws-amp" type="number" step="0.05" min="0" onchange="updateWaveSourceProp('amp',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">位相 [°]</span><input class="prop-input" id="ws-phase" type="number" step="5" title="複数の波源をずらして干渉させるときに使います" onchange="updateWaveSourcePhase(this.value)"></div>
+            <div id="ws-warn" class="wave-warn" style="display:none"></div>
+            <div class="checkbox-row"><input type="checkbox" id="ws-enabled" onchange="updateWaveSourceEnabled(this.checked)"><label for="ws-enabled">発振する</label></div>
+            <div class="rpanel-title" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">波動場（すべての波で共通）</div>
+            <div class="prop-row"><span class="prop-label">波速 v [m/s]</span><input class="prop-input" id="wf-wavespeed" type="number" step="0.1" min="0.1" max="8" title="媒質中を波が進む速さ。λ = v/f が導出されます" onchange="setWaveSpeed(this.value)"></div>
+            <div class="prop-row"><span class="prop-label">媒質の吸収 [1/m]</span><input class="prop-input" id="wf-waveabsorb" type="number" step="0.01" min="0.02" max="0.2" title="振幅が exp(-αr) で減る割合。計算する範囲はこの値から自動的に決まります" onchange="setWaveAbsorb(this.value)"></div>
+            <div class="prop-row"><span class="prop-label">表示</span>
+              <select class="prop-select" id="wf-waveview" onchange="setWaveViewMode(this.value)">
+                <option value="both">山と谷</option>
+                <option value="crest">山だけ</option>
+                <option value="trough">谷だけ</option>
+                <option value="field">圧力場（赤＝山／青＝谷）</option>
+              </select>
+            </div>
+            <div class="prop-row"><span class="prop-label">山・谷の太さ [%]</span><input class="prop-input" id="wf-wavethr" type="number" step="1" min="1" max="60" title="山（谷）の頂点から何%ぶんを線として描くか" onchange="setWaveCrestWidth(this.value)"></div>
+            <div class="prop-row"><span class="prop-label">表示の強さ</span><input class="prop-input" id="wf-wavegain" type="number" step="0.5" min="0.5" max="40" onchange="worldUpdate('waveViewGain',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">計算の上限</span>
+              <select class="prop-select" id="wf-wavebudget" onchange="setWaveBudget(this.value)">
+                <option value="0.3">軽い</option>
+                <option value="0.8">標準</option>
+                <option value="1.5">精細</option>
+                <option value="3.0">最高</option>
+              </select>
+            </div>
+            <div id="wf-wave-info" class="wave-info"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この波源を削除</button>
+          </div>
+
+          <div id="slinky-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">ばねを選択中</div>
+            <div id="slk-blurb" style="font-size:10px;color:var(--text2);margin-bottom:6px;line-height:1.5">既定は<b>理想ばね</b>（質量を無視した教科書のばね）です。単振動の周期が T = 2π√(m/k) と厳密に一致します。<br>下の「理想ばね化」を外すと、質量を持った実体のあるばね（質点がばねでつながった索）になります。振れば横波、押し引きすれば疎密波が伝わり、物体ともぶつかります。<b>張力はどちらでも設定ではなく、伸びた結果として出てきます</b>（下の実測欄）。</div>
+            <div class="prop-row"><span class="prop-label">ばね定数 k [N/m]</span><input class="prop-input" id="slk-ea" type="number" step="1" min="0.5" title="フックの法則 F = −kx の k。ばね全体を 1m 伸ばすのに要る力です。&#10;★内部では長さによらない材料定数「伸び剛性 EA = k × 自然長」で保持しています（下の実測欄に出ます）。自然長を変えても k はそのまま保たれ、EA のほうが追従します。&#10;小さいほどスリンキー（緩いばね）に近づき、縦波と横波の速さが近くなって両方見えます。&#10;大きいほどギターの弦に近づき、縦波が速すぎて見えなくなります（v縦/v横 = √((1+ε)/ε)）。&#10;★大きくすると必要な計算の刻みが細かくなります（内部で自動的にサブステップを増やします）" onchange="updateSlinkyProp('springK',this.value)"></div>
+            <div class="prop-row" id="slk-mu-row"><span class="prop-label">線密度 μ [kg/m]</span><input class="prop-input" id="slk-mu" type="number" step="0.01" min="0.001" title="自然長 1m あたりの質量。重いほど波が遅くなり（v = √(T/μ)）、重力で大きく垂れます" onchange="updateSlinkyProp('linDensity',this.value)"></div>
+            <div class="prop-row" id="slk-rest-row"><span class="prop-label">自然長 [m]</span><input class="prop-input" id="slk-rest" type="number" step="0.05" min="0.05" title="力がかかっていないときの長さ。両端の距離より短くすると、その差が伸び＝張力になります。&#10;長くするとたるみます（重力があればカテナリーに垂れます）" onchange="updateSlinkyProp('restM',this.value)"></div>
+            <div class="prop-row" id="slk-damp-row"><span class="prop-label">減衰 [1/s]</span><input class="prop-input" id="slk-damp" type="number" step="0.05" min="0" title="材料の減衰。0 なら定在波がいつまでも残ります（数値計算による減衰はほぼゼロです）" onchange="updateSlinkyProp('damp',this.value)"></div>
+            <div class="prop-row" id="slk-nd-row"><span class="prop-label">節点密度 [/m]</span><input class="prop-input" id="slk-nd" type="number" step="2" min="2" max="200" title="自然長 1m あたりの質点の数。1波長あたり10個以上あれば波は正しく伝わります。&#10;★見た目のコイルの細かさとは別物です（コイルの巻きピッチは節点数によらず一定）" onchange="updateSlinkyProp('nodeDensity',this.value)"></div>
+            <div class="prop-row" id="slk-bend-row"><span class="prop-label">曲げにくさ β</span><input class="prop-input" id="slk-bend" type="number" step="0.1" min="0" title="曲げに逆らう強さ（軸のばね定数に対する比）。&#10;0 にすると曲げに一切逆らわないので、圧縮された瞬間に最短波長で座屈してぐしゃぐしゃに折り畳まれます。&#10;大きいほど「形を保つばね」に、小さいほど「ふにゃふにゃの紐」に近づきます。&#10;★大きくすると計算の刻みが細かくなります（内部で自動的にサブステップを増やします）" onchange="updateSlinkyProp('bendRatio',this.value)"></div>
+            <div class="prop-row" id="slk-radius-row"><span class="prop-label">太さ [px]</span><input class="prop-input" id="slk-radius" type="number" step="1" min="1" title="コイルの振れ幅（＝見た目の太さ）。&#10;実体のばね（理想ばね化OFF）では、そのまま当たり判定の半径にもなります。&#10;理想ばねは当たり判定を持たないので、見た目だけに効きます" onchange="updateSlinkyProp('radius',this.value)"></div>
+            <div class="checkbox-row" id="slk-guide-cb"><input type="checkbox" id="slk-guide" onchange="updateSlinkyGuide(this.checked)"><label for="slk-guide" title="ばね全体を、指定した向きの直線上だけを動くようにします（節点を1本ずつ別のレールに通すのではなく、全部を同じ1本のレールに通した「ビーズの列」です）。&#10;縦波（疎密波）を見せるときに使います。押し引きで張力が周期的に変わると横向きの振動がひとりでに育つので、それを止めます。&#10;★横波はレールに垂直な運動そのものなので、レールを入れると伝わらなくなります。">運動方向固定（ばね全体）</label></div>
+            <div class="prop-row" id="slk-guide-row" style="display:none"><span class="prop-label">動ける向き [°]</span><input class="prop-input" id="slk-guideangle" type="number" step="1" title="この向きの直線上だけを動きます。右向き0°・反時計回りが正。&#10;既定はレールを入れた時点のばねの向きです（入れた瞬間に形が変わらないように）" onchange="updateSlinkyGuideAngle(this.value)"></div>
+            <div class="checkbox-row"><input type="checkbox" id="slk-ideal" onchange="updateSlinkyIdeal(this.checked)"><label for="slk-ideal" title="質量を無視した、ただの力の法則として扱います（＝教科書のばね）。物理的には同じ物の m→0 の極限です。&#10;★質量が無いので波は伝わりません。そのぶん単振動の周期が T = 2π√(m/k) と厳密に一致し、硬いばね（サスペンションなど）も軽い計算で安定に扱えます。&#10;チェックを入れるとばね自身の質量 m_s/3 が消えるので、周期はそのぶん短くなります。&#10;見た目はコイルのまま変わりません（変わるのは物理だけ）。">理想ばね化する（質量を無視）</label></div>
+            <div class="prop-row" id="slk-dampc-row" style="display:none"><span class="prop-label">減衰係数 c [N·s/m]</span><input class="prop-input" id="slk-dampc" type="number" step="0.1" min="0" title="速度に比例して縮み伸びに逆らう力 F = −c·v の c。0 で減衰なし。&#10;質量ゼロのばねには節点が無いので、内部減衰の代わりにこちらで指定します。&#10;★相手の質量を見ない実物のダッシュポットと同じ量なので、何につないでも同じ力を返します（減衰比 ζ は下の実測欄に出ます）。" onchange="updateSlinkyProp('dampC',this.value)"></div>
+            <div id="slk-ends" style="font-size:10px;color:var(--text2);margin:4px 0 6px 2px;line-height:1.5"></div>
+            <!-- ★先端おもり（ロープの j-row-tip と同じ）。物体に取り付いていない端にだけ出す -->
+            <div id="slk-row-tip" style="display:none">
+              <div class="prop-label cb-sub" style="margin-top:6px" title="固定した端は動かせません。小さなおもりを付けると、その端をつかむツールで引っ張れます。ばねにおもりを吊るした単振動も、これで作れます。&#10;★質量は「今この端を引いている張力とつり合う重さ」で作ります（＝付けた瞬間はその場で静止して始まる）。ばねは引いた長さの半分を自然長にして置かれるので、軽いおもりを付けると蓄えた弾性エネルギーが一気に解放されて暴れます。&#10;重さを変えるときは、おもり自体を選んでプロパティの質量を書き換えてください。おもりは回転せず、ばねを削除すると一緒に消えます">先端おもり（掴んで引くための取っ手）</div>
+              <button class="btn-small" id="slk-tip-a" style="width:100%;margin-bottom:4px" onclick="toggleSlinkyTipFromPanel('A')">端Aにおもりを付ける</button>
+              <button class="btn-small" id="slk-tip-b" style="width:100%;margin-bottom:6px" onclick="toggleSlinkyTipFromPanel('B')">端Bにおもりを付ける</button>
+            </div>
+            <div class="checkbox-row"><input type="checkbox" id="slk-coil" onchange="updateSlinkyView('showCoil',this.checked)"><label for="slk-coil" title="ばねのコイルとして描きます。巻きピッチは自然長基準なので、縮んだところは巻きが詰まり伸びたところは広がります＝疎密波がそのまま目に見えます">コイルとして描く</label></div>
+            <div class="checkbox-row"><input type="checkbox" id="slk-strain" onchange="updateSlinkyView('showStrain',this.checked)"><label for="slk-strain" title="今の平均ひずみを基準に、縮んでいる区間を暖色・伸びている区間を寒色で塗ります。疎密波の位置が読み取れます">疎密を色で示す</label></div>
+            <div class="checkbox-row"><input type="checkbox" id="slk-beads" onchange="updateSlinkyView('showBeads',this.checked)"><label for="slk-beads" title="計算に使っている節点（質点）を点で描きます。ばねが質点の列として解かれていることが見えます">節点を表示</label></div>
+            <div class="prop-row"><span class="prop-label">色</span><div class="color-swatch" id="slk-color-swatch" onclick="openColorPicker(this,'slinky')"></div></div>
+            <div class="prop-group-title" style="margin-top:6px">グラフ</div>
+            <div class="prop-row"><span class="prop-label">観測点（端Aから）[m]</span><input class="prop-input" id="slk-gpos" type="number" step="0.05" min="0" title="y-t グラフを取る点。端Aからの距離で指定します。右クリックでばねの上を指しても同じ窓が開きます" onchange="updateSlinkyGraphPos(this.value)"></div>
+            <button class="btn-small" id="slk-graph-btn" style="width:100%;margin-bottom:4px" onclick="toggleSlinkyWaveGraphFromPanel()" title="ばねのこの点が時間とともにどう動くかを、別の窓にグラフで出します。画面のばねそのものが x-y グラフ（ある瞬間の形）なので、2つを見くらべると λ と T の違いが読めます">この点の y-t グラフ</button>
+            <div id="slk-info" class="wave-info"></div>
+            <button class="btn-small" id="slk-reset-btn" style="width:100%;margin-top:6px" onclick="resetSelectedSlinky()">波を消す（静止させる）</button>
+            <button class="btn-small" id="slk-del-btn" style="width:100%;margin-top:4px" onclick="deleteSelectedElement()">このばねを削除</button>
+          </div>
+          <!-- 粒子（液体・気体）。個体ではなく群れとして扱うので、個数と平均温度を出す -->
+          <div id="particle-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="pcl-title">粒子を選択中</div>
+            <div class="prop-row"><span class="prop-label">種類</span><input class="prop-input" id="pcl-kind" type="text" readonly title="液体（水）か気体か。範囲選択のあと右クリック →「液体のみ選択」「気体のみ選択」で分けられます"></div>
+            <div class="prop-row"><span class="prop-label">個数</span><input class="prop-input" id="pcl-count" type="number" readonly title="選んでいる粒子の数"></div>
+            <div class="prop-row" id="pcl-temp-row"><span class="prop-label">温度 [℃]</span><input class="prop-input" id="pcl-temp" type="number" step="1" min="-273.15" title="選んだ粒子ぜんぶの平均温度です。打ち替える／つまみを動かすと、選んだ全部がその温度になります。&#10;★気体（分子）だけは選択によらず、いる分子ぜんぶがその温度になります。分子運動論の温度は集団の速度分布そのもので、分子の一部には配れないためです（一部にだけ書くと平均で薄まり、打った値になりません）。&#10;※ここで温度を変えると系の熱量が変わります（熱源を入れたのと同じ扱い）" onchange="updateParticleTemp(this.value)"></div>
+            <div class="prop-row"><span class="prop-label">熱容量 C [J/K]</span><input class="prop-input" id="pcl-heatcap" type="number" readonly title="選んだ粒子の熱容量の合計。水は1粒子あたり約0.63kg・比熱4182 J/(kg·K) です"></div>
+            <div class="prop-row" id="pcl-vrms-row"><span class="prop-label">分子の速さ [m/s]</span><input class="prop-input" id="pcl-vrms" type="text" readonly title="二乗平均速さ v_rms。温度そのものです（½m⟨v²⟩ = kT）。&#10;※画面の中では見えるように遅く描いています。ここに出るのは本当の速さです"></div>
+            <div class="prop-row" id="pcl-mol-row"><span class="prop-label">物質量 [mol]</span><input class="prop-input" id="pcl-mol" type="text" readonly title="画面の点1つが約5×10²⁰個の分子を代表しています。圧力・温度はこの数で計算した実際の値です"></div>
+            <div class="prop-row"><span class="prop-label">印の色</span>
+              <div style="display:flex;align-items:center;gap:6px;flex:1">
+                <div class="color-swatch" id="pcl-swatch" onclick="openColorPicker(this,'particleNew')" title="選んだ粒子ぜんぶに印を付けます。色は目印で、物理には効きません（赤い水と青い水は同じ水で、質量も比熱も同じ）。&#10;※印を付けた粒子は、全体設定の「温度で色をつける」が ON でも印の色のままです"></div>
+                <button class="btn-small" onclick="resetParticleColor()" title="印を消して、型の色（液体は水色・気体は薄い水色）に戻します">既定</button>
+              </div>
+            </div>
+            <div class="checkbox-row"><input type="checkbox" id="pcl-tracer" onchange="updateParticleTracer(this.checked)"><label for="pcl-tracer" title="選んだ粒子ぜんぶに軌跡を付けます（軌跡ツールで粒子を1つずつクリックするのと同じ）。同じ水がどう回るかが線で出ます。&#10;色と残す時間は、軌跡ツールの設定の値を使います。何百個にも付けると描画が重くなります">軌跡を表示</label></div>
+            <div class="prop-group-title" id="pcl-graph-title" style="margin-top:6px">グラフ</div>
+            <button class="btn-small" id="pcl-tempgraph-btn" style="width:100%;margin-bottom:4px" onclick="toggleTempGraph();updateParticlePanel()" title="いまシミュレーション上にいる液体・気体それぞれの平均温度を、時間のグラフに描きます。&#10;★気体は、選んだ分子だけでなく世界じゅうの気体分子ぜんぶの温度です（温度は集団の速度分布そのもので、分子一部には配れないため）">温度のグラフ</button>
+            <div style="font-size:10px;color:var(--text2);margin:4px 0 6px;line-height:1.5" id="pcl-hint">ドラッグでまとめて平行移動できます。Delete で削除。</div>
+            <button class="btn-small" style="width:100%;margin-top:4px" onclick="deleteSelectedParticles()">選んだ粒子を削除</button>
+          </div>
+          <div id="emfield-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="emf-title">場の領域を選択中</div>
+            <div class="prop-row"><span class="prop-label" id="emf-strength-label">強さ</span><input class="prop-input" id="emf-p-strength" type="number" step="0.5" min="0" title="領域の内側だけにこの強さの場ができます。重なった領域は足し合わされます" onchange="updateEMFieldProp('strength',this.value)"></div>
+            <!-- 磁場は紙面の表裏の2択。角度スライダーは意味を持たないので出さない -->
+            <div class="prop-row" id="emf-p-dir-row"><span class="prop-label">向き</span>
+              <select class="prop-select" id="emf-p-dir" onchange="updateEMFieldDir(this.value)"></select>
+            </div>
+            <!-- 電場は任意角。EMField.angle が角度そのものなので、斜めの向きもそのまま F = qE に効く -->
+            <div class="prop-row" id="emf-p-angle-row" style="display:none"><span class="prop-label">向き [°]</span><input class="prop-input" id="emf-p-angle" type="number" step="1" title="電場の向き。右向き0°・反時計回りが正" onchange="updateEMFieldAngle(this.value)"></div>
+            <div class="material-grid" id="emf-angle-preset-grid" style="display:none;margin-bottom:5px"></div>
+            <!-- 電場だけ。0＝直流、正なら E·sin(2πft) で振れて向きが反転する（磁場に無い理由は field.js の★） -->
+            <div class="prop-row" id="emf-p-freq-row" style="display:none"><span class="prop-label">振動数 [Hz]</span><input class="prop-input" id="emf-p-freq" type="number" step="0.01" min="0" title="0 は直流（いつも同じ強さ）。&#10;正にすると強さを振幅として E·sin(2πft) で振れ、半周期ごとに向きが反転します（交流）" onchange="updateEMFieldProp('freq',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 x [m]</span><input class="prop-input" id="emf-p-x" type="number" step="0.1" onchange="updateEMFieldProp('x',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 y [m]</span><input class="prop-input" id="emf-p-y" type="number" step="0.1" title="上向きが正" onchange="updateEMFieldProp('y',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">幅 [m]</span><input class="prop-input" id="emf-p-w" type="number" step="0.1" min="0.04" onchange="updateEMFieldProp('w',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">高さ [m]</span><input class="prop-input" id="emf-p-h" type="number" step="0.1" min="0.04" onchange="updateEMFieldProp('h',this.value)"></div>
+            <div id="emf-info" class="wave-info"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この領域を削除</button>
+          </div>
+          <!-- ★加熱・冷却の領域。系の外から熱を出し入れする入口なので、持つ欄は出力と寸法だけ -->
+          <div id="heatfield-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="hf-title">加熱の領域を選択中</div>
+            <div class="prop-row"><span class="prop-label" id="hf-power-label">出力 [W]</span><input class="prop-input" id="hf-p-power" type="number" step="10" title="正で加熱（熱を与える）、負で冷却（熱を奪う）、0 で止まります。つまみは 0 に吸着します。&#10;領域全体が1秒あたりに出し入れする熱量です。1つあたりではありません。&#10;枠の内側にあるものへ、浸かっている体積の比で配られます（中身が増えると1つあたりは減ります＝定格出力のバーナーと同じ）。&#10;系へ入る熱は中身によらず必ずこの値になり、「全体設定 → 熱量の内わけ」の供給ぶんと一致します" onchange="updateHeatFieldProp('power',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 x [m]</span><input class="prop-input" id="hf-p-x" type="number" step="0.1" onchange="updateHeatFieldProp('x',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 y [m]</span><input class="prop-input" id="hf-p-y" type="number" step="0.1" title="上向きが正" onchange="updateHeatFieldProp('y',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">幅 [m]</span><input class="prop-input" id="hf-p-w" type="number" step="0.1" min="0.04" onchange="updateHeatFieldProp('w',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">高さ [m]</span><input class="prop-input" id="hf-p-h" type="number" step="0.1" min="0.04" onchange="updateHeatFieldProp('h',this.value)"></div>
+            <div id="hf-info" class="wave-info"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この領域を削除</button>
+          </div>
+          <!-- ★流れの場（風・水流）。設定は流速・向き・媒質だけ。中の物体には
+               F = ½ρCd A|u−v|(u−v) が働き、速度は流速 u に漸近する（終端速度＝u） -->
+          <div id="flowfield-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">流れの場を選択中</div>
+            <div class="prop-row"><span class="prop-label">効かせ方</span><select class="prop-input" id="ff-p-mode" title="速度の合成＝媒質ごと物体を運びます（川を渡る船・動く歩道）。地面から見た速度が v+u になります。&#10;流体の抗力＝相対速度に応じた力で押します（終端速度・水流に押される物体）。重い物体は摩擦に負けて動きません" onchange="updateFlowFieldMode(this.value)"><option value="advect">速度の合成（媒質が運ぶ）</option><option value="drag">流体の抗力（力で押す）</option></select></div>
+            <div class="prop-row"><span class="prop-label">流速 [m/s]</span><input class="prop-input" id="ff-p-speed" type="number" step="0.5" min="0" title="媒質が流れる速さです。速度の合成なら、地面から見た速度にこれがそのまま加わります。&#10;抗力なら、中の物体がこの速さに漸近します（終端速度＝流速）" onchange="updateFlowFieldProp('speed',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">向き [°]</span><input class="prop-input" id="ff-p-angle" type="number" step="1" title="流れの向き。0°＝右向き、90°＝上向き" onchange="updateFlowFieldAngle(this.value)"></div>
+            <div class="prop-row" id="ff-row-medium"><span class="prop-label">媒質</span><select class="prop-input" id="ff-p-medium" title="媒質の密度 ρ [kg/m³]。実在の値です（空気 1.2 ／ 水 1000）。&#10;同じ流速でも水のほうが約800倍の力になります" onchange="updateFlowFieldMedium(this.value)"></select></div>
+            <div class="prop-row" id="ff-row-density"><span class="prop-label">密度 ρ [kg/m³]</span><input class="prop-input" id="ff-p-density" type="number" step="0.1" min="0" title="媒質の密度。プリセットに無い値も直接打てます（0 なら何も起きません）" onchange="updateFlowFieldProp('density',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 x [m]</span><input class="prop-input" id="ff-p-x" type="number" step="0.1" onchange="updateFlowFieldProp('x',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">中心 y [m]</span><input class="prop-input" id="ff-p-y" type="number" step="0.1" title="上向きが正" onchange="updateFlowFieldProp('y',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">幅 [m]</span><input class="prop-input" id="ff-p-w" type="number" step="0.1" min="0.04" onchange="updateFlowFieldProp('w',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">高さ [m]</span><input class="prop-input" id="ff-p-h" type="number" step="0.1" min="0.04" onchange="updateFlowFieldProp('h',this.value)"></div>
+            <div id="ff-info" class="wave-info"></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedElement()">この領域を削除</button>
+          </div>
+          <!-- 注釈（テキスト・お絵描き）。物理の欄は1つも持たない -->
+          <div id="annot-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="annot-title">テキストを選択中</div>
+            <div id="annot-text-section">
+              <div class="prop-label cb-sub">文字（Enterで改行）</div>
+              <textarea class="prop-input" id="annot-text" rows="3" spellcheck="false"
+                        style="width:100%;resize:vertical;margin-bottom:6px;font-family:inherit"
+                        title="キャンバス上でも、選択したあともう一度クリックすると直接書き直せます"
+                        onchange="updateAnnotProp('text',this.value)"></textarea>
+            </div>
+            <div class="prop-row"><span class="prop-label" id="annot-color-label">文字の色</span>
+              <div class="color-swatch" id="annot-color-swatch" style="margin-left:auto"
+                   title="クリックで変更" onclick="openAnnotColorPicker(this)"></div>
+            </div>
+            <div class="prop-row" id="annot-size-row"><span class="prop-label">文字の大きさ [m]</span><input class="prop-input" id="annot-size" type="number" step="0.05" min="0.01" title="ワールド上の大きさ。ズームすると文字も一緒に大きくなります" onchange="updateAnnotProp('size',this.value)"></div>
+            <div class="prop-row" id="annot-width-row"><span class="prop-label">線の太さ [m]</span><input class="prop-input" id="annot-width" type="number" step="0.005" min="0.005" title="ワールド上の太さ。ズームすると線も一緒に太くなります" onchange="updateAnnotProp('width',this.value)"></div>
+            <div class="prop-row" id="annot-font-row"><span class="prop-label">フォント</span>
+              <select class="prop-select" id="annot-font" onchange="updateAnnotProp('font',this.value)"></select>
+            </div>
+            <div class="checkbox-row" id="annot-bold-row"><input type="checkbox" id="annot-bold" onchange="updateAnnotProp('bold',this.checked)"><label for="annot-bold">太字</label></div>
+            <div class="prop-row"><span class="prop-label">向き [°]</span><input class="prop-input" id="annot-angle" type="number" step="1" title="右向き0°・反時計回りが正。箱の中心を軸に回ります" onchange="updateAnnotProp('angle',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">左うえ x [m]</span><input class="prop-input" id="annot-x" type="number" step="0.1" title="文字の左うえの角の位置。ここを基準に右と下へ文字が伸びます" onchange="updateAnnotProp('x',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">左うえ y [m]</span><input class="prop-input" id="annot-y" type="number" step="0.1" title="上向きが正" onchange="updateAnnotProp('y',this.value)"></div>
+            <div class="checkbox-row"><input type="checkbox" id="annot-front" onchange="updateAnnotProp('front',this.checked)"><label for="annot-front" title="既定は背面（物体の下）。物体に隠れて読めないときだけ手前へ出します">物体より手前に出す</label></div>
+            <div class="checkbox-row" id="annot-attach-row"><input type="checkbox" id="annot-attach" onchange="updateAnnotProp('attach',this.checked)"><label for="annot-attach" title="物体の上に描いた線は、その物体に貼り付いて一緒に動き・回ります（紙に書いた線と同じ）。&#10;外すと背景の線になり、その場に残ります。入れると、線の下にある物体に貼り付けます。&#10;貼った物体を消すと、線も一緒に消えます">物体に貼り付ける（一緒に動く）</label></div>
+            <div class="checkbox-row"><input type="checkbox" id="annot-nospin" onchange="updateAnnotProp('noCamSpin',this.checked)"><label for="annot-nospin" title="カメラを物体に向きごと固定したとき、この注釈だけ世界と一緒に回さず、上向きのまま同じ場所に出します。説明の札に使ってください。&#10;★回している間、この注釈は掴めなくなります（外すか、カメラの回転を解いてください）">カメラの回転で回さない</label></div>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedAnnotation()">この注釈を削除</button>
+          </div>
+          <div id="circuit-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="c-title">回路素子を選択中</div>
+            <div class="prop-row" id="c-R-row"><span class="prop-label">抵抗 R [Ω]</span><input class="prop-input" id="c-R" type="number" step="1" min="0.1" title="オームの法則 V = RI の R。直列なら和、並列なら逆数の和になります" onchange="updateCircuitProp('R',this.value)"></div>
+            <div class="prop-row" id="c-pos-row"><span class="prop-label">接点の位置 AP [cm]</span><input class="prop-input" id="c-pos" type="number" step="0.1" min="0" title="端 a から接点までの抵抗線の長さ。抵抗線は一様なので、a〜接点の抵抗は R×AP÷全長、接点〜b が残りになります" onchange="updateCircuitProp('apLen',this.value)"></div>
+            <div class="prop-row" id="c-cOff-row"><span class="prop-label">端子の離れ [cm]</span><input class="prop-input" id="c-cOff" type="number" step="5" title="接点の端子を抵抗線の中点からどれだけ離して出すか。負にすると反対側に出ます。端子につないだ導線はついてきます" onchange="updateCircuitProp('cOff',this.value)"></div>
+            <div class="prop-row" id="c-V-row"><span class="prop-label" id="c-V-label">電圧 V [V]</span><input class="prop-input" id="c-V" type="number" step="0.5" title="起電力。負の値にすると向きが逆になります" onchange="updateCircuitProp('V',this.value)"></div>
+            <div class="prop-row" id="c-freq-row"><span class="prop-label">振動数 f [Hz]</span><input class="prop-input" id="c-freq" type="number" step="0.1" min="0.1" title="交流電源の振動数。V(t) = V·sin(2πft)" onchange="updateCircuitProp('freq',this.value)"></div>
+            <div class="prop-row" id="c-phase-row"><span class="prop-label">初期位相 φ [°]</span><input class="prop-input" id="c-phase" type="number" step="5" title="V(t) = V·sin(2πft + φ)。交流電源を2台つないで、位相をずらして重ねるときに使います" onchange="updateCircuitProp('phaseDeg',this.value)"></div>
+            <div class="prop-row" id="c-r-row"><span class="prop-label">内部抵抗 r [Ω]</span><input class="prop-input" id="c-r" type="number" step="0.1" min="0" title="既定 0.5＝実際の電源に近い設定。0 にすると理想電源になり I = V/R がぴったり出ますが、コイルを直結すると投入時の直流分が永久に残ります。端子電圧は V = E − rI、短絡電流は I = E/r になります" onchange="updateCircuitProp('r',this.value)"></div>
+            <div class="prop-row" id="c-ar-row"><span class="prop-label">内部抵抗 r [Ω]</span><input class="prop-input" id="c-ar" type="number" step="0.1" min="0" title="0＝理想電流計（回路に影響しません）。電流計は直列につなぐので、内部抵抗があるとそのぶん回路の電流が減ります" onchange="updateCircuitProp('r',this.value)"></div>
+            <div class="prop-row" id="c-Rv-row"><span class="prop-label">内部抵抗 R [Ω]</span><input class="prop-input" id="c-Rv" type="number" step="100" min="1" title="既定 10 MΩ＝実質的に理想（回路に影響しません）。電圧計は並列につなぐので、内部抵抗を測る抵抗と同程度まで下げると分圧が狂い、測定値が真の値より小さくなります" onchange="updateCircuitProp('R',this.value)"></div>
+            <div class="prop-row" id="c-C-row"><span class="prop-label">容量 C [F]</span><input class="prop-input" id="c-C" type="number" step="1e-4" min="1e-6" title="時定数は τ = RC。既定は教室で見える大きさにしてあります" onchange="updateCircuitProp('C',this.value)"></div>
+            <div class="prop-row" id="c-L-row"><span class="prop-label">自己ｲﾝﾀﾞｸﾀﾝｽ L [H]</span><input class="prop-input" id="c-L" type="number" step="0.1" min="0.01" title="時定数は τ = L/R。電流の変化を妨げる向きに起電力が生じます" onchange="updateCircuitProp('L',this.value)"></div>
+            <div class="prop-row" id="c-Vf-row"><span class="prop-label">順方向電圧 V<sub>f</sub> [V]</span><input class="prop-input" id="c-Vf" type="number" step="0.1" min="0.05" title="20mA 流したときの電圧降下。0.7＝シリコンダイオード、2.0前後＝赤色LED。しきい値で切り替えているのではなく、I = Is(exp(V/nVt)−1) から出る立ち上がりです" onchange="updateCircuitProp('Vf',this.value)"></div>
+            <div class="prop-row" id="c-Vr-row"><span class="prop-label">定格電圧 V [V]</span><input class="prop-input" id="c-Vr" type="number" step="0.5" min="0.1" title="この電圧で定格の明るさになります（理科の豆電球は 2.5V 0.3A ＝ 0.75W）" onchange="updateCircuitProp('Vr',this.value)"></div>
+            <div class="prop-row" id="c-Pr-row"><span class="prop-label">定格電力 P [W]</span><input class="prop-input" id="c-Pr" type="number" step="0.05" min="0.01" title="定格電圧をかけたときの消費電力。定格の抵抗は R = V²/P で決まります" onchange="updateCircuitProp('Pr',this.value)"></div>
+            <div class="prop-row" id="c-tau-row"><span class="prop-label">熱の時定数 τ [s]</span><input class="prop-input" id="c-tau" type="number" step="0.02" min="0" title="フィラメントが温まる速さ。小さくすると点灯が速くなり、突入電流の観察時間も短くなります。0 にすると温度がすぐにつり合い、電流と電圧はいつも特性曲線の上に来ます（突入電流は出ません）" onchange="updateCircuitProp('tau',this.value)"></div>
+            <div class="checkbox-row" id="c-burnt-row"><input type="checkbox" id="c-burnt" onchange="updateCircuitProp('burnt',this.checked)"><label for="c-burnt">切れている（外すと直る）</label></div>
+            <div class="checkbox-row" id="c-nc-row"><input type="checkbox" id="c-nc" onchange="updateCircuitProp('nc',this.checked)"><label for="c-nc">ふだん閉じている（b接点）</label></div>
+            <div class="prop-row" id="c-br-row"><span class="prop-label">反応半径 [px]</span><input class="prop-input" id="c-br" type="number" step="2" min="4" title="この円に物体がかかると押されます。点線の円で表示されます" onchange="updateCircuitProp('br',this.value)"></div>
+            <div class="prop-row" id="c-ch-row"><span class="prop-label">チャンネル番号</span><input class="prop-input" id="c-ch" type="number" step="1" min="1" title="同じ番号どうしが連動します（リレーはコイルと接点、モーターは端子と軸）" onchange="updateCircuitProp('ch',this.value)"></div>
+            <div class="prop-row" id="c-coilR-row"><span class="prop-label">巻線抵抗 R [Ω]</span><input class="prop-input" id="c-coilR" type="number" step="0.5" min="0.01" title="コイル（電機子）の抵抗。0にはできません" onchange="updateCircuitProp('R',this.value)"></div>
+            <div class="prop-row" id="c-Ipull-row"><span class="prop-label">動作電流 I [A]</span><input class="prop-input" id="c-Ipull" type="number" step="0.005" min="0.0001" title="これを超えると接点が動きます。復帰はこの半分まで下がってから（ヒステリシス）" onchange="updateCircuitProp('Ipull',this.value)"></div>
+            <div class="prop-row" id="c-turns-row"><span class="prop-label">巻数 N</span><input class="prop-input" id="c-turns" type="number" step="10" min="1" title="B = μrμ0NI/(2a)。巻数に比例して磁場が強くなります" onchange="updateCircuitProp('turns',this.value)"></div>
+            <div class="prop-row" id="c-coila-row"><span class="prop-label">コイル半径 a [m]</span><input class="prop-input" id="c-coila" type="number" step="0.01" min="0.005" title="小さいほど中心の磁場が強くなります（B ∝ 1/a）" onchange="updateCircuitProp('a',this.value)"></div>
+            <div class="prop-row" id="c-mur-row"><span class="prop-label">比透磁率 μ<sub>r</sub></span><input class="prop-input" id="c-mur" type="number" step="100" min="1" title="1＝空心。鉄心を入れると1000程度になり、磁場が3桁強くなります。2Tで飽和します" onchange="updateCircuitProp('mur',this.value)"></div>
+            <div class="prop-row" id="c-fr-row"><span class="prop-label">磁場の半径 [px]</span><input class="prop-input" id="c-fr" type="number" step="10" min="10" title="磁場が及ぶ範囲。この円の内側だけ一様な磁場とみなします" onchange="updateCircuitProp('fr',this.value)"></div>
+            <div class="prop-row" id="c-mk-row"><span class="prop-label">トルク定数 k [N·m/A]</span><input class="prop-input" id="c-mk" type="number" step="0.01" min="0.001" title="τ = kI と E = kω の両方に効きます（同じ定数なのでエネルギーが保存します）" onchange="updateCircuitProp('k',this.value)"></div>
+            <div class="checkbox-row" id="c-closed-row"><input type="checkbox" id="c-closed" onchange="updateCircuitProp('closed',this.checked)"><label for="c-closed">閉じる（ON）</label></div>
+            <button class="btn-small" id="c-flip-btn" style="width:100%;margin:2px 0 6px" onclick="flipSelectedCircuit()">⇄ 向きを反転</button>
+            <div class="prop-row" id="c-I-row"><span class="prop-label">電流 I [A]</span><input class="prop-input" id="c-I" type="text" readonly></div>
+            <div class="prop-row" id="c-Vread-row"><span class="prop-label">電圧 V [V]</span><input class="prop-input" id="c-Vread" type="text" readonly></div>
+            <div id="c-note" style="display:none;font-size:10px;color:var(--text2);margin-top:2px"></div>
+            <button class="btn-small" id="c-graph-btn" style="width:100%;margin-top:6px" onclick="toggleCircGraphPin()" title="この素子の電流・電圧を時間グラフに出します。ウィンドウは回路ごとに自動で分かれ、同じ回路の素子は同じウィンドウにまとまります（1つのウィンドウにつき最大4本）。交流で定常状態なら、ベクトル図も一緒に描かれます">グラフに追加</button>
+            <button class="btn-small" id="c-table-btn" style="width:100%;margin-top:6px" onclick="toggleCircTableOfSelected()" title="この素子の横に、電圧・電流・抵抗・電気量のうちこの素子に要る値の表を出します。表は編集ツールかつかむツールでドラッグして動かせます（上メニュー〈表示〉の「回路の表を表示」と同じもの）">表を出す</button>
+            <button class="btn-small" id="c-reset-btn" style="width:100%;margin-top:6px" onclick="resetSelectedCircuitStorage()" title="コンデンサーの電荷 Q と、コイル・電磁石の磁束 Φ を 0 に戻します。この素子とつながっている回路だけが対象です。豆電球のフィラメント温度も室温に戻ります（切れた球は直りません）">この回路の蓄えをリセット</button>
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="deleteSelectedCircuit()">この素子を削除</button>
+          </div>
+          <div id="ground-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">地面を選択中</div>
+            <div class="prop-row"><span class="prop-label">反発係数</span><input class="prop-input" id="g-restitution" type="number" step="0.05" min="0" max="1" onchange="updateGroundProp('restitution',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">摩擦係数 μ<sub>k</sub></span><input class="prop-input" id="g-friction" type="number" step="0.05" min="0" onchange="updateGroundProp('friction',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">静止摩擦係数<span class="u"> μ<sub>s</sub></span></span><input class="prop-input" id="g-friction-s" type="number" step="0.05" min="0" onchange="updateGroundProp('frictionStatic',this.value)"></div>
+            <div class="prop-row"><span class="prop-label">波に対する扱い</span>
+              <select class="prop-select" id="g-wavemode" onchange="updateGroundWaveMode(this.value)">
+                <option value="pass">素通り</option>
+                <option value="fixed">固定端反射</option>
+                <option value="free">自由端反射</option>
+              </select>
+            </div>
+            <!-- ★「地面を表示」はレイヤーの5つ目に見えてしまうので、物体のプロパティと同じ
+                 prop-group（上に区切り線）で分けて置く。中身は同じでも並びだけで混同する。 -->
+            <div class="prop-group">
+              <div class="prop-group-title">衝突</div>
+              <div class="prop-label cb-sub">衝突レイヤー</div>
+              <div class="layer-grid">
+                <div class="checkbox-row"><input type="checkbox" id="g-layer1" onchange="updateGroundLayer(1,this.checked)"><label for="g-layer1"><span class="layer-chip" style="background:#42a5f5"></span>1</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="g-layer2" onchange="updateGroundLayer(2,this.checked)"><label for="g-layer2"><span class="layer-chip" style="background:#66bb6a"></span>2</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="g-layer3" onchange="updateGroundLayer(3,this.checked)"><label for="g-layer3"><span class="layer-chip" style="background:#ffa726"></span>3</label></div>
+                <div class="checkbox-row"><input type="checkbox" id="g-layer4" onchange="updateGroundLayer(4,this.checked)"><label for="g-layer4"><span class="layer-chip" style="background:#ab47bc"></span>4</label></div>
+              </div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">表示</div>
+              <div class="checkbox-row"><input type="checkbox" id="g-terrain" onchange="updateGroundTerrain(this.checked)"><label for="g-terrain">地面を表示</label></div>
+            </div>
+          </div>
+          <!-- ★閉じ込めた気体。熱力学的性質はすべてここに集める。
+               器と蓋（ピストン）は気体の付属品で、それ自身は普通の物体として選べる
+               ＝寸法・質量・素材・熱容量はそちらのプロパティに出る（蓋が軸から
+               外れないことだけが特別で、その旨は物体のパネルに注記が出る）。 -->
+          <div id="gas-form" style="display:none">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">気体を選択中</div>
+            <div class="prop-group">
+              <div class="prop-group-title">気体の状態</div>
+              <div class="prop-row"><span class="prop-label">圧力 P [kPa]</span><input class="prop-input" id="p-gas-pnow" type="number" readonly title="P = nRT/V。ピストンには (P − 大気圧) × 断面積 が働きます"></div>
+              <div class="prop-row"><span class="prop-label">体積 V [L]</span><input class="prop-input" id="p-gas-vnow" type="number" readonly></div>
+              <div class="prop-row"><span class="prop-label">温度 T [℃]</span><input class="prop-input" id="p-gas-tnow" type="number" step="1" title="第一法則 dU = dQ − P dV で動きます。壁と熱をやりとりしなければ断熱変化（圧縮すると温まる）になります" onchange="uiGasProp('T', C2K(parseFloat(this.value)))"></div>
+              <div class="prop-row"><span class="prop-label">物質量 n [mol]</span><input class="prop-input" id="p-gas-nnow" type="number" readonly></div>
+              <div class="prop-row"><span class="prop-label">自由度 f</span><input class="prop-input" id="p-gas-dof" type="number" step="1" min="3" max="7" title="比熱比 γ = 1 + 2/f。2原子分子（空気）は5でγ=1.4、単原子（ヘリウム）は3でγ≈1.67" onchange="uiGasProp('dof',this.value)"></div>
+              <div class="prop-row"><span class="prop-label">定積モル比熱<span class="u"> C<sub>V</sub> [J/(mol·K)]</span></span><input class="prop-input" id="p-gas-cv" type="number" readonly title="C_V = (f/2)R。自由度から決まります"></div>
+              <div class="prop-row"><span class="prop-label">定圧モル比熱<span class="u"> C<sub>P</sub> [J/(mol·K)]</span></span><input class="prop-input" id="p-gas-cp" type="number" readonly title="マイヤーの関係 C_P − C_V = R。定圧では気体が膨張して仕事をするぶんだけ余計に熱が要ります"></div>
+              <div class="prop-row"><span class="prop-label">比熱比 γ<span class="u"> = C<sub>P</sub>/C<sub>V</sub></span></span><input class="prop-input" id="p-gas-gamma" type="number" readonly title="断熱変化で PV^γ = 一定 を決める値。単原子(f=3)で5/3、二原子(f=5)で1.4"></div>
+              <div class="prop-row"><span class="prop-label">熱を通す壁</span><select class="prop-input" id="p-gas-wall" title="指定するとその物体と熱をやりとりします（熱容量が大きく熱をよく通す壁を選ぶと等温変化になります）。&#10;「なし」なら断熱変化＝ PV^γ が一定に保たれます" onchange="uiGasWall(this.value)"></select></div>
+              <div class="prop-row" id="p-gas-cock-row"><span class="prop-label">コック</span><label class="prop-input" style="display:flex;align-items:center;gap:6px;border:none;background:none" title="管の途中のコックです。閉じると2つは別々の気体に戻り、そのとき持っていた気体がそれぞれに閉じこめられます。&#10;※管でつなぐ操作は、気体を右クリックしたメニューにあります"><input type="checkbox" id="p-gas-cock" onchange="uiGasCock(this.checked)"><span style="font-size:11px">開く</span></label></div>
+              <div id="p-gas-note" style="font-size:10px;color:var(--text2);line-height:1.5;margin-top:4px"></div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">状態変化</div>
+              <div class="material-grid" id="p-gas-proc" style="margin-bottom:5px">
+                <button class="btn-small" id="p-gas-iso-v" onclick="uiGasProcess('isochoric')" title="ピストンを固定して体積を一定にします（定積変化）。&#10;気体は仕事をしないので W = 0、加えた熱はすべて内部エネルギーになります（ΔU = Q）">定積</button>
+                <button class="btn-small" id="p-gas-iso-p" onclick="uiGasProcess('isobaric')" title="ピストンを自由にします（定圧変化）。&#10;荷重（ピストンの重さ＋大気）が一定なので、P = 大気圧 + mg/A が自動的に一定に保たれます。特別な仕掛けは要りません">定圧</button>
+                <button class="btn-small" id="p-gas-iso-t" onclick="uiGasProcess('isothermal')" title="いまの温度を保つ恒温槽に浸けます（等温変化）。&#10;ΔU = 0 なので Q = W になり、下の帳簿でそれを確かめられます。&#10;※外部の熱源なので、系全体の熱量は保存しません。実在の壁で等温にしたいときは、上の「熱を通す壁」に熱容量の大きい物体を指定してください">等温</button>
+                <button class="btn-small" id="p-gas-adia" onclick="uiGasProcess('adiabatic')" title="恒温槽を外し、壁との熱のやりとりも切ります（断熱変化）。&#10;Q = 0 なので ΔU = −W。PV^γ が一定に保たれます（実測で機械精度）">断熱</button>
+              </div>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">第一法則の帳簿　ΔU = Q − W</div>
+              <div class="prop-row"><span class="prop-label">気体がした仕事<span class="u"> W [J]</span></span><input class="prop-input" id="p-gas-w" type="number" readonly title="膨張すると正、圧縮されると負。P-V図の「囲む面積」と一致します"></div>
+              <div class="prop-row"><span class="prop-label">吸収した熱 Q<sub>in</sub> [J]</span><input class="prop-input" id="p-gas-qin" type="number" readonly title="熱効率 η = W / Q_in の分母になります"></div>
+              <div class="prop-row"><span class="prop-label">放出した熱 Q<sub>out</sub> [J]</span><input class="prop-input" id="p-gas-qout" type="number" readonly></div>
+              <div class="prop-row"><span class="prop-label">内部Eの変化 ΔU [J]</span><input class="prop-input" id="p-gas-du" type="number" readonly title="ΔU = n·Cv·ΔT。右の検算が0に近ければ第一法則が成り立っています"></div>
+              <div class="prop-row"><span class="prop-label">検算 ΔU−(Q−W)</span><input class="prop-input" id="p-gas-flcheck" type="number" readonly title="第一法則の残差。0 に近いほど帳簿が合っています"></div>
+              <div class="prop-row"><span class="prop-label">熱効率 η [%]</span><input class="prop-input" id="p-gas-eta" type="number" readonly title="η = 正味の仕事 / 吸収した熱。1サイクル回してから読んでください。&#10;サイクルの起点で「帳簿をリセット」を押すのがコツです"></div>
+              <button class="btn-small" id="p-gas-ledger-reset" style="width:100%;margin-top:4px" onclick="uiGasResetLedger()" title="W・Q・ΔU の累計を0に戻し、いまの温度を ΔU の基準にします。サイクルの起点で押してください">帳簿をリセット（サイクルの起点にする）</button>
+            </div>
+            <div class="prop-group">
+              <div class="prop-group-title">グラフ</div>
+              <button class="btn-small" id="p-pvgraph-btn" style="width:100%" onclick="togglePvGraph()" title="この気体の P-V 図を表示します。横軸は時間ではなく体積で、状態が (V,P) 平面をどう動いたかを描きます">P-V 図</button>
+              <button class="btn-small" id="p-gastemp-btn" style="width:100%;margin-top:4px" onclick="toggleTempGraph();refreshPvGraphButton()" title="温度の時間変化を描きます（横軸が時間のグラフ。P-V 図とは別の窓です）。&#10;★この器だけでなく、場にある気体の容器ぜんぶが器ごとに1本ずつ描かれます">温度 – 時間のグラフ</button>
+            </div>
+            <!-- ★気体だけを抜くことはできない。真空にすると大気圧が蓋を閉端まで潰すだけで、
+                 モデルに「空の器」という状態が無いので、器・蓋ごと消す。 -->
+            <button class="btn-small" style="width:100%;margin-top:6px" onclick="uiDeleteGas()" title="この気体と、それを閉じ込めている器・蓋をまとめて消します">この気体を容器ごと削除</button>
+          </div>
+        </div>
+        <!-- ★素材プリセットは中身が「質量・摩擦＋色」なので、色だけの外観より上に置く。
+             外観がプロパティのいちばん最後になる（見出しの並びの意図どおり）。 -->
+        <div class="rpanel-section" id="material-section">
+          <div class="rpanel-title">素材プリセット</div>
+          <div class="material-grid" id="material-grid"></div>
+        </div>
+        <div class="rpanel-section" id="appearance-section">
+          <div class="rpanel-title">外観</div>
+          <div class="prop-row">
+            <span class="prop-label">塗りつぶし</span>
+            <div class="color-swatch" id="fill-swatch" onclick="openColorPicker(this,'fill')"></div>
+          </div>
+          <div class="prop-row">
+            <span class="prop-label">枠線</span>
+            <div class="color-swatch" id="stroke-swatch" onclick="openColorPicker(this,'stroke')"></div>
+          </div>
+          <div class="prop-row"><span class="prop-label">枠幅</span><input class="prop-input" id="p-sw" type="number" step="1" min="0" max="20" onchange="updateProp('strokeWidth',this.value)"></div>
+        </div>
+      </div>
+      <div id="tab-scene" style="display:none">
+        <div class="rpanel-section">
+          <div class="rpanel-title">オブジェクト一覧（上＝奥／下＝手前）</div>
+          <div style="font-size:10px;color:var(--text2);line-height:1.5;margin-bottom:5px">
+            ドラッグで並べ替えると描画順が変わります。下にあるものほど手前に描かれ、
+            重なった場所ではクリックでも先に選ばれます。
+          </div>
+          <!-- 高さは style.css 側（#obj-list）でパネルいっぱいに伸ばす -->
+          <div id="obj-list" style="font-size:11px"></div>
+        </div>
+      </div>
+      <div id="tab-world" style="display:none">
+        <div class="rpanel-section">
+          <div class="rpanel-title">重力・空気</div>
+          <div class="prop-row"><span class="prop-label">重力X [m/s²]</span><input class="prop-input" id="w-gx" type="number" step="0.1" value="0" onchange="worldUpdate('gravX',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">重力Y [m/s²]</span><input class="prop-input" id="w-gy" type="number" step="0.1" value="-9.8" onchange="worldUpdate('gravY', -this.value)"></div>
+          <!-- ★重力X・Yを合成した向きに垂直な破線。重力を傾けたときの「見かけの水平」を示す -->
+          <div class="checkbox-row"><input type="checkbox" id="w-gravline" onchange="worldUpdate('showGravityLine',this.checked)"><label for="w-gravline" title="重力X・Yを合成した向きに垂直で、原点を通る破線を引きます。重力を傾けたときの「見かけの水平」がどこかが分かります。&#10;原点から重力の向きへ短い矢印も出るので、どちら側が下かも読めます。&#10;重力X・Yが両方0（無重力）のときは向きが決まらないので描きません。">重力に垂直な線（見かけの水平）</label></div>
+          <button class="btn-small" style="width:100%;margin:2px 0 6px" onclick="alignGroundToGravity()" title="地面の傾きを、上の破線と同じ向き＝重力に垂直にそろえます。重力Xを入れて斜めにした重力で「水平な地面」を作るときに使います">地面をこの向きに合わせる</button>
+          <div class="checkbox-row"><input type="checkbox" id="w-gravitation" onchange="worldUpdate('gravitation',this.checked)"><label for="w-gravitation">万有引力（物体間に引力）</label></div>
+          <div class="prop-row"><span class="prop-label">万有引力定数</span><input class="prop-input" id="w-gravstr" type="number" step="500" min="0" title="F = G m₁m₂/r² の G。ただし実効値です。実際の G = 6.67×10⁻¹¹ は日常スケールでは弱すぎて何も起きない（1 kg どうしが1 m 離れて 6.7×10⁻¹¹ N）ため、画面で見える大きさに調整するつまみとして扱っています。大きいほど物体どうしが強く引き合います" onchange="worldUpdate('gravStrength',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">引力のぼかし [m]</span><input class="prop-input" id="w-gravsoften" type="number" step="0.01" min="0.01" title="F = G m₁m₂/(r²+ε²) の ε。r→0 で引力が無限大にならないようにするための長さです。&#10;既定 0.08 m（8px）は、ぶつかる大きさの物体どうしが接触寸前でも暴れない値。&#10;軌道の半径がこれに近いと引力が目に見えて弱まります（軌道半径 0.10 m で 38% 減）。太陽系のような縮尺模型を組むときは、いちばん内側の軌道の半径の 1/10 以下まで下げてください" onchange="worldUpdate('gravSoften',this.value*100)"></div>
+          <div class="prop-row"><span class="prop-label">空気密度 [kg/m³]</span><input class="prop-input" id="w-airdensity" type="number" step="0.1" min="0" max="10" value="1.2" title="空気=1.2。物体の抗力係数 Cd が 0 だと効きません（空気抵抗は 空気密度 × Cd で決まります）" onchange="worldUpdate('airDensity',this.value)"></div>
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">熱</div>
+          <div class="checkbox-row"><input type="checkbox" id="w-thermal" checked onchange="setThermalOn(this.checked)"><label for="w-thermal" title="表示ではなく物理のスイッチです。既定ON。接触した物体・水・気体のあいだで熱が移り、系全体の熱量が保存します。&#10;物体も水も既定は20℃なので、温度を変えるまでは何も起きません。&#10;計算は既存の近傍探索・接触判定に相乗りしているので、切っても速くはなりません（1500粒子で1%未満）。&#10;★扱う範囲：熱は伝わり、仕事もしますが、物質は変わりません。融点・沸点・相転移（氷が溶ける／水が沸く）・潜熱・過冷却は扱いません。温度で変わるのは、熱の流れ・気体粒子の熱運動・水の熱膨張（対流）です">熱のやりとりを計算する</label></div>
+          <div class="prop-row"><span class="prop-label">まわりの温度 [℃]</span><input class="prop-input" id="w-ambienttemp" type="number" step="5" title="熱放射の相手になる「周囲」の温度です。放射率が0でない物体は、他の物体に向いていない面からこの温度の環境と熱をやりとりします。&#10;出入りした熱は下の「熱源が与えた熱」に積まれるので、系の熱量の台帳は閉じたままです。&#10;放射率が0の物体しかないシーンでは一切使われません" onchange="updateAmbientTemp(this.value)"></div>
+          <div class="prop-row"><span class="prop-label">熱の伝わる速さ [×]</span><input class="prop-input" id="w-thermalrate" type="number" step="100" min="0" value="50000" title="熱伝導だけを早送りする倍率です。1が実物どおり。&#10;実物の熱伝導は教材で眺めるには遅すぎるため、既定で50000倍にしてあります（60cmの鉄塊が平衡に達するのに実時間で約7時間かかる計算で、実際20秒回しても温度差200℃がまったく縮まりませんでした）。&#10;★材質どうしの比（金属はスポンジの約1000倍伝えやすい）は変わりません。熱量保存にも影響せず、動く速さだけが変わります。&#10;目安：材質を指定しない箱どうしを100℃と0℃で接触させたときの10秒後は、1000で93/7℃、5000で75/25℃、50000でほぼ平衡（50/50℃）。ゆっくり見たいなら下げてください" onchange="worldUpdate('thermalRate',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">系の熱量 [kJ]</span><input class="prop-input" id="w-totalheat" type="number" readonly title="Σ(比熱 × 質量 × 温度)。熱が移っても、この合計は変わりません（保存の確認用）。&#10;物体を足したり消したり、温度を手で変えたりすれば当然変わります。&#10;摩擦熱が出ている間は、その分だけ増えます（下の欄と足し引きが合います）"></div>
+          <div class="prop-row"><span class="prop-label">散逸で出た熱 [J]</span><input class="prop-input" id="w-fricheat" type="number" readonly title="散逸した仕事の累計です（摩擦・非弾性衝突・空気抵抗・背景摩擦）。&#10;力学的エネルギーが減ったぶんがそのままここに現れるので、第一法則（力学E + 熱E = 一定）の確認に使えます。&#10;実測では、地面をすべる箱で 力学E減少 78.3J に対して 77.9J（教科書の μmgd = 78.6J）でした。&#10;リセットで0に戻ります"></div>
+          <div class="prop-row"><span class="prop-label">熱源が与えた熱 [J]</span><input class="prop-input" id="w-reservoirheat" type="number" readonly title="系の外から出入りした熱の累計です（マイナスなら吸収）。&#10;・「恒温にする」を入れた物体&#10;・加熱／冷却の領域（冷却は負で積まれます）&#10;Δ(系の熱量) = 散逸で出た熱 + 熱源が与えた熱 になります。&#10;加熱の領域は、頭打ち（絶対零度）で実際に入らなかったぶんは積みません＝この式は常に成り立ちます"></div>
+          <div class="checkbox-row"><input type="checkbox" id="w-thermalviz" onchange="worldUpdate('thermalViz',this.checked)"><label for="w-thermalviz" title="物体と粒子を温度に応じた色（青＝冷たい／赤＝熱い）で塗ります。表示だけで物理は変わりません。画面左下に色の目盛りが出ます">温度で色をつける</label></div>
+          <div class="prop-row"><span class="prop-label">色の下端 [℃]</span><input class="prop-input" id="w-thermalvizmin" type="number" step="10" value="0" title="この温度以下はすべて同じ青になります" onchange="worldUpdate('thermalVizMin',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">色の上端 [℃]</span><input class="prop-input" id="w-thermalvizmax" type="number" step="10" value="100" title="この温度以上はすべて同じ赤になります" onchange="worldUpdate('thermalVizMax',this.value)"></div>
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">大気圧</div>
+          <div class="prop-row"><span class="prop-label">大気圧 [kPa]</span><input class="prop-input" id="w-atm" type="number" step="1" min="0" value="101.325" title="気体室のピストン面にだけ効きます。&#10;★閉じた物体に一様な圧力がかかっても合力は0（全方向から等しく押される）ので、剛体一般には掛けていません。効くのは圧力差のある可動境界だけです。&#10;0にすると真空：気体室は釣り合いが P = mg/A だけになり、大きく膨張します（実測では高さが1mから21mへ）" onchange="worldUpdate('atmPressure', (parseFloat(this.value)||0)*1000)"></div>
+          <!-- ★プリセットは上メニュー（シミュレーション→大気圧）だけに置く。重力プリセットも
+               そちらにしか無く、右パネルは値の欄だけにして縦を空けておく流儀に揃える。
+               ★圧力の矢印のスイッチもここには置かない。ピストンの「力を表示」に統合した。 -->
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">波動場</div>
+          <div class="prop-row"><span class="prop-label">波速 v [m/s]</span><input class="prop-input" id="w-wavespeed" type="number" step="0.1" min="0.1" max="8" value="2" title="媒質中を波が進む速さ。この値は一定で、λ = v/f が導出されます。抗力の空気密度とは連動しません" onchange="setWaveSpeed(this.value)"></div>
+          <div class="prop-row"><span class="prop-label">媒質の吸収 [/m]</span><input class="prop-input" id="w-waveabsorb" type="number" step="0.01" min="0.02" max="0.2" value="0.15" title="振幅が exp(-αr) で減る割合。計算する範囲はこの値から自動的に決まります。小さくすると波が遠くまで届きますが重くなります" onchange="setWaveAbsorb(this.value)"></div>
+          <div class="prop-row"><span class="prop-label">表示</span>
+            <select class="prop-select" id="w-waveview" onchange="setWaveViewMode(this.value)">
+              <option value="both">山と谷</option>
+              <option value="crest">山だけ</option>
+              <option value="trough">谷だけ</option>
+              <option value="field">圧力場（赤＝山／青＝谷）</option>
+            </select>
+          </div>
+          <div class="prop-row"><span class="prop-label">山・谷の太さ [%]</span><input class="prop-input" id="w-wavethr" type="number" step="1" min="1" max="60" value="12" title="山（谷）の頂点から何%ぶんを線として描くか。小さいほど細い線になります" onchange="setWaveCrestWidth(this.value)"></div>
+          <div class="prop-row"><span class="prop-label">表示の強さ</span><input class="prop-input" id="w-wavegain" type="number" step="0.5" min="0.5" max="40" value="6" onchange="worldUpdate('waveViewGain',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">計算の上限</span>
+            <select class="prop-select" id="w-wavebudget" onchange="setWaveBudget(this.value)">
+              <option value="0.3">軽い</option>
+              <option value="0.8">標準</option>
+              <option value="1.5">精細</option>
+              <option value="3.0">最高</option>
+            </select>
+          </div>
+          <div id="w-wave-info" class="wave-info"></div>
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">電磁気</div>
+          <div style="font-size:10px;color:var(--text2);margin-bottom:6px">電場・磁場は「回路」ツールの<b>電場の領域／磁場の領域</b>で置きます（ドラッグした矩形の内側だけに場ができます）。向きと強さは、置いたあと選択して変えられます。</div>
+          <div class="checkbox-row"><input type="checkbox" id="w-coulomb" onchange="emWorldUpdate('coulombOn',this.checked)"><label for="w-coulomb" title="表示ではなく物理のスイッチです。既定ON。電荷を持つ物体同士に F = kq₁q₂/r² が実際に働き、同符号は反発し異符号は引き合って動きます。OFFなら電荷は互いに何の力も及ぼしません（電場・磁場の領域からは力を受けます）。OFFにすると便利なのは、一様電場中の放物運動を+qと−qで同時に見せるときのように、動く試験電荷どうしの反発で軌道が乱れては困る場面です">電荷同士にクーロン力を働かせる</label></div>
+          <div class="prop-row"><span class="prop-label">クーロン定数</span><input class="prop-input" id="w-coulombk" type="number" step="0.1" min="0" value="2" title="F = k q₁q₂/r² の k。ただし実効値です。実際の k = 8.99×10⁹ は日常スケールでは強すぎて（1 C どうしが1 m 離れて 90 億 N）成立しないため、画面で見える大きさに調整するつまみとして扱っています（万有引力定数と同じ思想）。既定の2なら、1 C 同士が 1 m 離れて 2 N です。スライダーは実用域の0〜5だけを刻みます（それより大きい値はこの欄に直接入力できます）。電気力線・等電位線の形はこの値を変えても変わりません（k は共通の係数なので）" onchange="emWorldUpdate('coulombK',this.value)"></div>
+          <div class="rpanel-title" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">場の表示</div>
+          <div class="checkbox-row"><input type="checkbox" id="w-fieldlines" onchange="worldUpdate('showFieldLines',this.checked)"><label for="w-fieldlines" title="点電荷の電気力線を描きます。本数は電荷の大きさに比例するので、線が混んでいるところほど電場が強い、という関係がそのまま読めます。正電荷から出て負電荷に入り、その1本を両者が共有します">電気力線を表示</label></div>
+          <div class="checkbox-row"><input type="checkbox" id="w-equipot" onchange="worldUpdate('showEquipotential',this.checked)"><label for="w-equipot" title="点電荷による電位の等高線を描きます。レベルは等比（1/2ずつ）で取っているので、電荷の近くでも遠くでも線が見えます。電気力線と直交することが確認できます。※置いた「電場の領域」は含みません（箱の中だけ一様な場は電位が大域的に定義できないため）">等電位線を表示</label></div>
+          <div style="font-size:10px;color:var(--text2);margin-top:4px">個々の物体にはたらく<b>クーロン力・ローレンツ力の矢印</b>は、物体のプロパティの「力を表示」でONにしてください。重力・垂直抗力などと同じ凡例に「電気力」「磁気力」として出ます。</div>
+        </div>        
+        <div class="rpanel-section">
+          <div class="rpanel-title">地面・壁・背景</div>
+          <div class="checkbox-row"><input type="checkbox" id="w-terrain" onchange="worldUpdate('terrain',this.checked)" checked><label for="w-terrain">地面表示</label></div>
+          <div class="prop-row">
+            <span class="prop-label">傾き</span>
+            <span id="w-ground-angle-val" style="color:var(--accent);font-size:11px;min-width:32px">0°</span>
+          </div>
+          <input type="range" id="w-ground-angle" min="-45" max="45" step="0.5" value="0"
+            oninput="setGroundAngle(parseFloat(this.value))"
+            style="width:100%;margin-bottom:6px">
+          <div class="prop-row"><span class="prop-label">地面Y [m]</span><input class="prop-input" id="w-ground-y" type="number" step="0.1" value="-4" onchange="setGroundY(this.value)"></div>
+          <!-- ★地面の反発係数・摩擦係数。キャンバス上で地面を選ばなくても触れるように、
+               地面を選択したときのプロパティ（#ground-form の g-* 欄）と同じものをここにも置く。
+               書き込む関数は updateGroundProp で共通なので、どちらから変えても同じ。 -->
+          <div class="prop-row"><span class="prop-label">地面の反発係数</span><input class="prop-input" id="w-ground-rest" type="number" step="0.05" min="0" max="1" title="0＝ぶつかって止まる／1＝完全弾性で跳ね返る。物体側の反発係数との積が使われます" onchange="updateGroundProp('restitution',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">地面の静止摩擦<span class="u"> μ<sub>s</sub></span></span><input class="prop-input" id="w-ground-friction-s" type="number" step="0.05" min="0" title="まだ滑っていない物体が滑り出すまでの限界を決めます。傾き θ の地面では tanθ = μs で滑り出します" onchange="updateGroundProp('frictionStatic',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">地面の動摩擦<span class="u"> μ<sub>k</sub></span></span><input class="prop-input" id="w-ground-friction" type="number" step="0.05" min="0" title="滑っている間にはたらく摩擦。F = μk N で、速さによらず一定です。μs より大きくはできません（入れると μs も一緒に上がります）" onchange="updateGroundProp('friction',this.value)"></div>
+          <div class="prop-row">
+            <span class="prop-label">地面色</span>
+            <div class="color-swatch" id="ground-swatch" onclick="openColorPicker(this,'ground')"></div>
+          </div>
+          <button class="btn-small" style="width:100%;margin-top:4px" onclick="setGroundAngle(0);document.getElementById('w-ground-angle').value=0">傾きをリセット</button>
+          <div style="border-top:1px solid var(--border);margin:8px 0 6px"></div>
+          <div class="checkbox-row"><input type="checkbox" id="w-walls" onchange="worldUpdate('wallsOn',this.checked)"><label for="w-walls" title="物体・液体・気体・ロープを矩形の内側に閉じ込めます。位置を直接押し戻す方式なので、どんなに速いものでも貫通できません。光（レーザー）は止めません">壁で囲う（物体が画面外へ逃げない）</label></div>
+          <div class="prop-row"><span class="prop-label">壁の幅 [m]</span><input class="prop-input" id="w-wallw" type="number" step="1" min="1" max="400" value="24" title="壁の左右の間隔。原点を中心に左右へ半分ずつ広がります" onchange="worldUpdate('wallW',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">壁の高さ [m]</span><input class="prop-input" id="w-wallh" type="number" step="1" min="1" max="400" value="60" title="床（地面の高さ）から天井までの高さ。横より広く取っておくと、投げ上げの実験で天井が邪魔になりません" onchange="worldUpdate('wallH',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">壁の反発係数</span><input class="prop-input" id="w-wallrest" type="number" step="0.05" min="0" max="1" value="0.4" title="0＝ぶつかって止まる／1＝完全弾性で跳ね返る" onchange="worldUpdate('wallRest',this.value)"></div>
+          <div style="font-size:10px;color:var(--text2);margin-top:4px">壁の床は地面の高さに合わせています。逃げた物体は「オブジェ」一覧から選ぶか、上のカメラの「選んだ物体を追う」と「全体が収まるまでズームアウト」で見つけられます。</div>
+          <!-- ★背景を「真上から見下ろした水平面」として使うときの設定。地面・壁と同じく
+               "物体が触れている面" の話なので、色（見た目だけ）とは分けてこちらへ置く。 -->
+          <div style="border-top:1px solid var(--border);margin:8px 0 6px"></div>
+          <div class="rpanel-title" style="margin-bottom:4px">背景（真上から見下ろした面）</div>
+          <div class="prop-row"><span class="prop-label">面静止摩擦係数</span><input class="prop-input" id="w-bgfriction-s" type="number" step="0.05" min="0" max="2" value="0" title="背景を真上から見下ろした水平面（テーブル）とみなしたときの、面と物体のあいだの静止摩擦係数 μs。加えた力が μs·mg⊥ を超えると物体が動き出します。0＝摩擦なし" onchange="updateBgFriction('bgFrictionStatic',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">面動摩擦係数</span><input class="prop-input" id="w-bgfriction" type="number" step="0.05" min="0" max="2" value="0" title="滑っているあいだの摩擦係数 μk。減速度は a = μk·g⊥ で、質量によりません。0＝摩擦なし" onchange="updateBgFriction('bgFriction',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">面に垂直な重力 [m/s²]</span><input class="prop-input" id="w-bggravperp" type="number" step="0.1" min="0" max="20" value="9.8" title="画面に垂直な向き（テーブル面に押し付ける向き）の重力 g⊥。垂直抗力 N = m·g⊥ を決めます。地球9.8／月1.6" onchange="updateBgFriction('bgGravPerp',this.value)"></div>
+          <div style="font-size:10px;color:var(--text2);margin-top:4px">摩擦係数を0より大きくすると、背景が「真上から見下ろした水平面」として働きます。上の重力X・Yを0にして使ってください。横から見た場面のまま入れると、空中の物体まで減速します。</div>
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">背景色</div>
+          <div class="prop-row">
+            <span class="prop-label">背景色</span>
+            <div class="color-swatch" id="bg-swatch" onclick="openColorPicker(this,'bg')"></div>
+          </div>
+        </div>
+        <div class="rpanel-section">
+          <div class="rpanel-title">シミュレーション設定</div>
+          <div class="prop-row"><span class="prop-label">反復回数</span><input class="prop-input" id="w-iters" type="number" step="1" min="1" max="20" value="8" onchange="worldUpdate('iterations',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">サブステップ</span><input class="prop-input" id="w-substeps" type="number" step="1" min="1" max="10" value="4" onchange="worldUpdate('substeps',this.value)"></div>
+          <div class="prop-row"><span class="prop-label">遠方を凍結 [m]</span><input class="prop-input" id="w-freezedist" type="number" step="10" min="0" value="200" title="画面からこの距離より遠くへ出た物体は、計算を止めて速度を保ったまま待機します（0で無効）。落下し続ける物体が計算量を増やし続けるのを防ぎます。軌跡・ジョイント・レーザー・波源が付いた物体、つかみ中の物体は凍結しません。万有引力モードでは無効です" onchange="setFreezeDistance(this.value)"></div>
+          <div class="checkbox-row"><input type="checkbox" id="w-sleeping" onchange="worldUpdate('sleeping',this.checked)" checked><label for="w-sleeping">スリープ有効</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="statusbar">
+  <div class="status-item">オブジェクト: <span id="st-objs">0</span></div>
+  <div class="status-item">座標: <span id="st-pos">0, 0</span></div>
+  <div class="status-item">選択中: <span id="st-sel">なし</span></div>
+  <div class="status-item">ステップ: <span id="st-step">0</span></div>
+  <div class="status-item" id="st-frozen-item" style="display:none;color:var(--accent3)" title="視界から遠く離れたため計算を止めている物体の数。全体設定タブの「遠方を凍結」で距離を変えられます（0で無効）。カメラを動かして近づけば再開します">凍結: <span id="st-frozen">0</span></div>
+  <div class="status-item" style="margin-left:auto">ズーム: <span id="st-zoom">100%</span></div>
+  <div class="status-item credit">© 2026 suika_neko</div>
+</div>
+<div id="ctx-menu">
+</div>
+<script src="js/core/units.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/geometry.js"></script>
+<script src="js/physics/body.js"></script>
+<script src="js/physics/convex.js"></script>
+<script src="js/physics/arc.js"></script>
+<script src="js/physics/gear.js"></script>
+<script src="js/physics/collision.js"></script>
+<script src="js/physics/joint.js"></script>
+<script src="js/optics/laser.js"></script>
+<script src="js/optics/arcoat.js"></script>
+<script src="js/optics/interference.js"></script>
+<script src="js/optics/screen.js"></script>
+<script src="js/physics/thermal.js"></script>
+<script src="js/physics/radiation.js"></script>
+<script src="js/physics/gas.js"></script>
+<script src="js/physics/vessel.js"></script>
+<script src="js/physics/heat-field.js"></script>
+<!-- ★heat-field.js より後ろ。重なり面積の計算（heatFieldBodyAreaM2）を借りている -->
+<script src="js/physics/flow-field.js"></script>
+<script src="js/physics/particles.js"></script>
+<!-- ★particles.js（SPH の押し出し判定を借りる）と gas.js（R_GAS）より後ろ -->
+<script src="js/physics/molecule.js"></script>
+<script src="js/waves/sources.js"></script>
+<script src="js/waves/field.js"></script>
+<script src="js/waves/slinky.js"></script>
+<script src="js/physics/ground.js"></script>
+<script src="js/physics/broadphase.js"></script>
+<script src="js/physics/rope.js"></script>
+<script src="js/physics/step.js"></script>
+<script src="js/physics/predict.js"></script>
+<script src="js/physics/energy.js"></script>
+<script src="js/render/scene.js"></script>
+<script src="js/render/body.js"></script>
+<script src="js/render/joint.js"></script>
+<script src="js/render/gas.js"></script>
+<script src="js/render/preview.js"></script>
+<!-- ★render/body.js より後ろ。輪郭を引く tracePolyLoop を借りている -->
+<script src="js/render/strobe.js"></script>
+<script src="js/render/vectors.js"></script>
+<script src="js/input/mouse.js"></script>
+<script src="js/input/keyboard.js"></script>
+<script src="js/input/touch.js"></script>
+<script src="js/ui/dialog.js"></script>
+<script src="js/ui/slider.js"></script>
+<script src="js/ui/tool-menus.js"></script>
+<script src="js/app/sim-controls.js"></script>
+<script src="js/app/camera.js"></script>
+<script src="js/app/selection.js"></script>
+<script src="js/app/transform.js"></script>
+<script src="js/ui/panel-element.js"></script>
+<script src="js/ui/panel-particle.js"></script>
+<script src="js/ui/panel-joint.js"></script>
+<script src="js/ui/panel-props.js"></script>
+<script src="js/ui/panel-gas.js"></script>
+<script src="js/ui/velgraph.js"></script>
+<script src="js/ui/wavegraph.js"></script>
+<script src="js/ui/circuitgraph.js"></script>
+<script src="js/ui/energygraph.js"></script>
+<script src="js/ui/momgraph.js"></script>
+<script src="js/ui/tempgraph.js"></script>
+<script src="js/ui/pvgraph.js"></script>
+<script src="js/ui/panel-world.js"></script>
+<script src="js/ui/context-menu.js"></script>
+<script src="js/app/history.js"></script>
+<script src="js/app/scene-io.js"></script>
+<!-- デモシーン。共通の道具 → 分野ごとの実装 → 目録、の順。★目録(demos.js)は必ず最後：
+     DEMO_CATALOG は const で、fn に書いた関数の識別子をこの行を読んだ瞬間に引くため。 -->
+<script src="js/app/demo-kit.js"></script>
+<script src="js/app/demos-mechanics.js"></script>
+<script src="js/app/demos-thermal.js"></script>
+<script src="js/app/demos-waves.js"></script>
+<script src="js/app/demos-em.js"></script>
+<script src="js/app/demos-em-micro.js"></script>
+<script src="js/app/demos-atomic.js"></script>
+<script src="js/app/demos-other.js"></script>
+<script src="js/app/demos-play.js"></script>
+<script src="js/app/demos-tutorial.js"></script>
+<script src="js/app/demos-tutorial2.js"></script>
+<script src="js/app/demos.js"></script>
+<script src="js/data/demo-thumbs.js"></script>   <!-- ★一覧窓のサムネイル（tools/thumbs.js が生成） -->
+<script src="js/ui/demo-browser.js"></script>
+<script src="js/app/select-helpers.js"></script>
+<script src="js/data/help-text.js"></script>
+<script src="js/ui/help-popup.js"></script>
+<script src="js/ui/color-picker.js"></script>
+<script src="js/physics/gravitation.js"></script>
+<script src="js/app/gif-recorder.js"></script>
+<script src="js/app/init.js"></script>
+<script src="js/ui/menubar.js"></script>
+<script src="js/ui/sim-popover.js"></script>
+<script src="js/optics/lens.js"></script>
+<script src="js/physics/sleep.js"></script>
+<script src="js/app/clipper.js"></script>
+<script src="js/app/gear-tools.js"></script>
+<script src="js/em/field.js"></script>
+<script src="js/em/charge-field.js"></script>
+<script src="js/em/circuit.js"></script>
+<script src="js/em/render.js"></script>
+<script src="js/em/interaction.js"></script>
+<script src="js/app/bulk-select.js"></script>
+<script src="js/app/annotate.js"></script>
+<!-- プログラム：きっかけ→することを物体に結びつける。窓は画面に貼り付く -->
+<script src="js/ui/panel-program.js"></script>
+<script src="js/app/program.js"></script>
+<script src="js/app/remote.js"></script>
+<script src="js/app/counter.js"></script>
+<script src="js/app/spdmeter.js"></script>
+<!-- 回路の表：素子の横に V・I・R・Q を出す札。回路ツールの窓から置く -->
+<script src="js/ui/circuit-table.js"></script>
+<script src="js/app/boot.js"></script>
+</body>
+</html>

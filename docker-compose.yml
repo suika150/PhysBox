@@ -1,0 +1,7 @@
+version: '3.8'
+services:
+  claude-sandbox:
+    build: .
+    command: tail -f /dev/null
+    volumes:
+      - .:/app
