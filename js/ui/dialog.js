@@ -55,7 +55,8 @@ function appDialog(opts) {
     const onKey = ev => {
       ev.stopPropagation();                    // アプリのショートカットへは通さない
       if (ev.key === 'Escape') { ev.preventDefault(); _closeAppModal(false); }
-      else if (ev.key === 'Enter') {
+      // ★複数行の欄（共有の説明など）では Enter を改行に使わせる
+      else if (ev.key === 'Enter' && ev.target.tagName !== 'TEXTAREA') {
         ev.preventDefault();
         _closeAppModal(document.activeElement !== cancelBtn);
       }

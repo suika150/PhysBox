@@ -175,12 +175,12 @@ function drawTorqueArc(cx, cy, tz, color) {
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
     ctx.stroke();
   };
-  stroke('rgba(0,0,0,0.6)', 5);
+  stroke(cHalo(0.6), 5);
   stroke(color, 2);
   // 終端に矢じり（接線方向へ短い矢印を1本描いて頭だけ見せる）
   const ex = cx + Math.cos(a1) * TORQUE_ARC_R, ey = cy + Math.sin(a1) * TORQUE_ARC_R;
   const tx = -Math.sin(a1) * Math.sign(sweep), ty = Math.cos(a1) * Math.sign(sweep);
-  drawArrow(ctx, ex - tx*0.1, ey - ty*0.1, ex + tx*0.1, ey + ty*0.1, 'rgba(0,0,0,0.6)', 5);
+  drawArrow(ctx, ex - tx*0.1, ey - ty*0.1, ex + tx*0.1, ey + ty*0.1, cHalo(0.6), 5);
   drawArrow(ctx, ex - tx*0.1, ey - ty*0.1, ex + tx*0.1, ey + ty*0.1, color, 2);
   return true;
 }
@@ -213,7 +213,7 @@ function drawForceVectors() {
       const d = worldToScreenDir(f.fx/mag, f.fy/mag);   // ★向きはカメラの回転を通す
       const ex = origin.x + d.x * alen;   // ★
       const ey = origin.y + d.y * alen;   // ★
-      drawArrow(ctx, origin.x, origin.y, ex, ey, 'rgba(0,0,0,0.6)', 5);
+      drawArrow(ctx, origin.x, origin.y, ex, ey, cHalo(0.6), 5);
       drawArrow(ctx, origin.x, origin.y, ex, ey, cfg.color, 2);
       _visibleForceTypes.add(f.type);
     }
@@ -243,7 +243,7 @@ function drawVelocityVectors() {
     const d = worldToScreenDir(b.vx / speedPx, b.vy / speedPx);   // ★同上
     const ex = o.x + d.x * alen; // ★
     const ey = o.y + d.y * alen; // ★
-    drawArrow(ctx, o.x, o.y, ex, ey, 'rgba(0,0,0,0.6)', 5);
+    drawArrow(ctx, o.x, o.y, ex, ey, cHalo(0.6), 5);
     drawArrow(ctx, o.x, o.y, ex, ey, '#66bb6a', 2);
     ctx.save();
     ctx.font = '11px sans-serif';
@@ -314,9 +314,9 @@ function drawForceLegend() {
   ctx.font = '11px sans-serif';
   const pad = 8, lh = 16, w = 120, h = pad * 2 + items.length * lh;
   const x = 10, y = canvas.height - h - 10;
-  ctx.fillStyle = 'rgba(26,28,35,0.82)';
+  ctx.fillStyle = cpal().hudBg;
   ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.strokeStyle = cLine(0.15);
   ctx.strokeRect(x, y, w, h);
   items.forEach((it, i) => {
     const ly = y + pad + i * lh + 6;
@@ -325,7 +325,7 @@ function drawForceLegend() {
     if (it.arc) ctx.arc(x + 17, ly, 6, -Math.PI * 0.75, Math.PI * 0.6);   // 曲がった矢印は弧で示す
     else { ctx.moveTo(x + 8, ly); ctx.lineTo(x + 26, ly); }
     ctx.stroke();
-    ctx.fillStyle = '#e0e6f0';
+    ctx.fillStyle = cText(1);
     ctx.fillText(it.label, x + 32, ly + 3);
   });
   ctx.restore();
@@ -388,9 +388,9 @@ function drawCenterOfMass() {
   // 札「重心」（上の★：記号は共通認識ではないので文字を必ず添える）
   ctx.font = '11px sans-serif';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';   // ★物体の上に重なっても読めるよう縁取る
+  ctx.lineWidth = 3; ctx.strokeStyle = cHalo(0.6);   // ★物体の上に重なっても読めるよう縁取る
   ctx.strokeText('重心', r + 4, -r + 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = cText(1);
   ctx.fillText('重心', r + 4, -r + 2);
   ctx.restore();
 }
@@ -461,7 +461,7 @@ function render(now) {
     if (!running) settleSlinkies();
     followUpdate(dt);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = world.bgColor;
+    ctx.fillStyle = canvasBg();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (world.showGrid || gridSnapActiveNow()) drawGrid();
     if (world.showAxes) drawAxes();
@@ -545,7 +545,7 @@ function render(now) {
         ctx.scale(cam.zoom, cam.zoom);
         if (b.type==='circle') { ctx.beginPath(); ctx.arc(0,0,b.radius+2/cam.zoom,0,Math.PI*2); }
         else if (b.type==='box') { ctx.beginPath(); ctx.rect(-b.w/2-2/cam.zoom,-b.h/2-2/cam.zoom,b.w+4/cam.zoom,b.h+4/cam.zoom); }
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = cLine(0.3);
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.restore();

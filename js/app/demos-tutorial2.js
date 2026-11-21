@@ -1,5 +1,5 @@
 // ════════════════════════════════════════
-//  チュートリアル（37〜87）— 1〜36（demos-tutorial.js）で扱っていない機能
+//  チュートリアル（37〜89）— 1〜36（demos-tutorial.js）で扱っていない機能
 // ════════════════════════════════════════
 //  ★2026-09-29、ユーザーの指示で新設（「全機能のチュートリアルを。1つの機能に1つのデモでなくていい」）。
 //    書き方・部品は demos-tutorial.js と同じ（tutBegin / tutText / tutBadge …をそのまま使う）。
@@ -1619,4 +1619,120 @@ function demoTut2Sleep() {
     '5. 右ドラッグで右へ見に行くと、B はまた転がり出す',
     '',
     '（どちらの設定も、別のデモを開くと元に戻る）']);
+}
+
+// ════════════════════════════════════════
+//  液体のくふう（88〜89）
+// ════════════════════════════════════════
+
+// 水槽（静止した U 字）を置き、内側の床の y を返す。IW は内寸の半分
+function tutTank(cx, gy, IW, IH, T) {
+  tutBody({ type:'polygon', x:cx, y:gy - T, isStatic:true, friction:0.4, frictionStatic:0.5, restitution:0,
+    verts:[{ x:-(IW + T), y:-IH }, { x:-IW, y:-IH }, { x:-IW, y:0 }, { x:IW, y:0 }, { x:IW, y:-IH },
+           { x:IW + T, y:-IH }, { x:IW + T, y:T }, { x:-(IW + T), y:T }],
+    fillColor:'#37474f', strokeColor:'#b0bec5', strokeWidth:2.5 });
+  return gy - T;
+}
+// 床 y0 から上へ rows 段、x0〜x1 に液体 liq の粒を詰める。詰めた上端の y を返す
+//   ★間隔は 11.2px（＝√restArea。これより詰めると始めた瞬間に水がはじける。demoBuoyancy の★）
+//   skip(x, y) が真の点には置かない（はじめから液体の中に置く物体の場所を空ける）
+function tutFillLiquid(x0, x1, y0, rows, liq, skip) {
+  const STEP = 11.2;
+  let y = y0 - STEP * 0.5;
+  for (let r = 0; r < rows; r++, y -= STEP)
+    for (let x = x0 + STEP * 0.6; x < x1 - STEP * 0.6; x += STEP)
+      if (!skip || !skip(x, y)) particles.push(new Particle(x, y, 'fluid', liq));
+  return y0 - rows * STEP;
+}
+
+// ── 88 液体の種類（水・油・食塩水）───────────────────────────
+//   ★流体ツールの窓の「液体の種類」と、層になった液体の浮力（particles.js の _layerProfile・
+//     _buoyancy）を見せる。下から食塩水 1200・水 1000・油 920 の3層に、密度の違う箱を4つ落とす。
+//     箱は「自分より重い液体」の上で止まり、境目の箱は上と下の液体の両方から浮力を受ける。
+//     理論の位置（境目より下にある割合）：950 は (950−920)/(1000−920)＝37.5%、
+//     1100 は (1100−1000)/(1200−1000)＝50%。800 は油に (800/920)＝87% 沈んで浮き、1400 は底。
+//   ★層の厚さ（6段＝67px）は箱の高さ（28px）より十分厚くする。薄いと、境目で止まるはずの箱が
+//     次の境目にも掛かって、2つの境目の間で釣り合う。
+//   ★1100 と 1400 ははじめから水の層の中に置く。油の層を通り抜けさせると、箱のうしろに
+//     油が引き込まれて水や食塩水の中に残る（実測：上から落とすと油 210 粒のうち水の中に 21、
+//     食塩水の中に 10 粒、60 秒たっても 13／7 粒。液面から静かに沈めても 23／4 粒）。
+//     実物の油の滴はすぐ浮き上がるが、この SPH は密度差 8% では動きが遅い（下の☆と同じ理由）。
+//   ★液体を注がせるのは「油を上に注ぐ」だけにする。重いほうを上から注ぐ（油の上に水）と、
+//     この SPH では入れ替わりが遅い（60秒で分離度 0.19。particles.js 冒頭の油の☆）ので、
+//     「沈んでいくはず」を見せる題材にはしない。
+function demoTut2Liquids() {
+  const gy = tutBegin();
+  world.sleeping = false;
+  const cx = tutScreenX(720), IW = 200, IH = 280, T = 20, BW = 50, BH = 28, SP = 11.2;
+  const floorY = tutTank(cx, gy, IW, IH, T);
+  // 箱の位置（x と、はじめの中心の y）。800・950 は油の液面に置き、1100・1400 は水の層の中
+  const yWaterMid = floorY - 9 * SP;
+  const boxes = [[800, '#8d6e63', cx - 150, null], [950, '#ab47bc', cx - 50, null],
+                 [1100, '#26a69a', cx + 50, yWaterMid], [1400, '#78909c', cx + 150, yWaterMid]];
+  const skip = (x, y) => boxes.some(([, , bx, by]) => by !== null &&
+    Math.abs(x - bx) < BW / 2 && Math.abs(y - by) < BH / 2);   // ★箱の大きさちょうど（広く空けると、箱が沈んだあとのすき間へ油が流れ込む）
+  const y1 = tutFillLiquid(cx - IW, cx + IW, floorY, 6, 'brine', skip);
+  const y2 = tutFillLiquid(cx - IW, cx + IW, y1, 6, 'water', skip);
+  const y3 = tutFillLiquid(cx - IW, cx + IW, y2, 6, 'oil', skip);
+  // 層の名前（水槽の右の外）
+  const lx = cx + IW + T + 14;
+  demoLabel(lx, (floorY + y1) / 2 + 7, '食塩水 1200', LIQUID_TYPES.brine.color, 17);
+  demoLabel(lx, (y1 + y2) / 2 + 7, '水 1000', '#4fc3f7', 17);
+  demoLabel(lx, (y2 + y3) / 2 + 7, '油 920', LIQUID_TYPES.oil.color, 17);
+  // 箱（数字は密度 [kg/m³]。名前は液面より上にまとめて出す）
+  for (const [d, col, x, y0] of boxes) {
+    const b = tutBody({ type:'box', x, y:y0 === null ? y3 - BH / 2 - 2 : y0, w:BW, h:BH, density:d,
+      friction:0.3, frictionStatic:0.4, restitution:0, fillColor:col, label:String(d) });
+    b.setMass(b.massFromDensity());
+    demoLabel(x - 18, y3 - 52, String(d), col, 17);
+  }
+  tutText('88 液体の種類（水・油・食塩水）', [
+    '1. 箱の数字は密度 [kg/m³]（1100 と 1400 は',
+    '　 はじめから水の中に置いてある）',
+    '2. {btn-play} → 箱は、自分より重い液体の上で止まる：',
+    '　 800 は油に浮き、950 は油と水の境目、',
+    '　 1100 は水と食塩水の境目、1400 は底まで沈む',
+    '3. 境目の箱は、上の液体と下の液体の両方から',
+    '　 浮力を受ける（押しのけた液体の重さの和）',
+    '4. 左の {t-particle} ボタンの窓で 液体 →「油」を選び、',
+    '　 水槽の上をドラッグ → 油は水に混ざらず上に広がる',
+    '5. 終わったら、窓の液体を「水」に戻しておく']);
+}
+
+// ── 89 水の流れに流される ────────────────────────────────
+//   ★水中の抵抗は「まわりの水に対する速さ」に掛かる（particles.js の SPH.buoyRelFlow）。
+//     せき止めた水を放すと、浮いた木の板は流れに運ばれる。
+//   ☆底に石を置いて「重い物は残る」も見せようとしたが、やめた。押し寄せる水の先端が
+//     押し出しの反作用（連成。重さの1倍まで）で石を叩き、40×30px の石（密度2700）が
+//     右の壁まで運ばれた。抗力だけなら 25N に対し静止摩擦は 84N で動かないはずで、
+//     「動かない」と書くと画面と食い違う。
+//     流れの場（FlowField）は物体にしか効かず水の粒を動かさないので、水そのものを流すには
+//     この「せきを外す」形にする。
+//   ★せきは静止した板にして、生徒に消させる（4 と同じ右クリック →「削除」）。
+function demoTut2Flow() {
+  const gy = tutBegin();
+  world.sleeping = false;
+  //   ★せきの奥の水は 20 段（224px）。15 段・せきが中央寄りのときは、木の板が運ばれる距離が
+  //     55px と小さく、流れに乗ったのが読み取りにくかった（いまは 196px。抗力を物体の速度のままに
+  //     掛けると 52px＝押し寄せた水に押されるぶんだけ）。
+  const cx = tutScreenX(720), IW = 260, T = 20, ROWS = 20, WH = ROWS * 11.2, GH = WH + 30, IH = GH + 30;
+  const floorY = tutTank(cx, gy, IW, IH, T);
+  const gateX = cx - 130;                          // せきの中心
+  tutWall(gateX, floorY - GH / 2, 16, GH);
+  tutFillLiquid(cx - IW, gateX - 8, floorY, ROWS, 'water');
+  const woodX = (cx - IW + gateX) / 2;
+  const wood = tutBody(Object.assign({ type:'box', x:woodX, y:floorY - WH - 30, w:60, h:30 }, MATERIALS['木材']));
+  wood.setMass(wood.massFromDensity());
+  demoLabel(woodX - 32, floorY - WH - 64, '木の板', '#eceff1', 18);
+  demoLabel(gateX - 14, floorY - GH - 12, 'せき', '#eceff1', 18);
+  tutBadge(gateX + 34, floorY - GH / 2, 2, '');
+  tutText('89 水の流れに流される', [
+    '1. {btn-play} → 木の板が、せきの左の水に浮かぶ',
+    '2. {t-pointer} ボタンで灰色の「せき」を選び、',
+    '　 右クリック →「削除」',
+    '3. 水が右へ流れ出し、木の板は流れに運ばれる',
+    '4. 水の中の物体は、まわりの水に対する速さに',
+    '　 抵抗を受ける。止まった水の中では動きを止める',
+    '　 向き、流れの中では流れと同じ向きに引かれる',
+    '5. {btn-reset} で最初に戻して、もう一度試せる']);
 }

@@ -39,6 +39,8 @@ class Joint {
     //   旧いシーンには id が無いので、そのときは今までどおり採番する。
     this.id = opts.id !== undefined ? opts.id : ++uidCounter;
     if (opts.id !== undefined && opts.id > uidCounter) uidCounter = opts.id;
+    // ★ウォームスタートの控え（ヒンジと軸。step.js の applyJointWarm の★）。保存はしない
+    this._wsx = 0; this._wsy = 0; this._wAccx = 0; this._wAccy = 0; this._wsOn = false;
     this.type = opts.type || 'spring'; // spring(ばね), hinge(ヒンジ), rope, rod(連結棒), fixjoint(溶接), axle(モーター)
     this.bodyA = opts.bodyA;
     this.bodyB = opts.bodyB;
@@ -574,6 +576,7 @@ class Joint {
         const jx = (-relVx * k22 - -relVy * k12) / det;
         const jy = (-relVy * k11 - -relVx * k21) / det;
         if (this._hOn) { this._hJx += jx; this._hJy += jy; }   // ★B が受けた力積（熱）
+        if (this._wsOn) { this._wAccx += jx; this._wAccy += jy; }   // ★ウォームスタートへ持ち越す（step.js の applyJointWarm）
         if (bA && !bA.isStatic) { bA.applyImpulse(-jx, -jy, waNew.x, waNew.y); bA.recordForce('constraint', -jx, -jy, waNew.x, waNew.y, this.id); }
         if (bB && !bB.isStatic) { bB.applyImpulse( jx,  jy, wbNew.x, wbNew.y); bB.recordForce('constraint',  jx,  jy, wbNew.x, wbNew.y, this.id); }
       }
@@ -610,6 +613,7 @@ class Joint {
           const jx = (-relVx*k22 + relVy*k12) / det;
           const jy = (-relVy*k11 + relVx*k12) / det;
           if (this._hOn) { this._hJx += jx; this._hJy += jy; }   // ★B が受けた力積（熱）
+          if (this._wsOn) { this._wAccx += jx; this._wAccy += jy; }   // ★ウォームスタートへ持ち越す（step.js の applyJointWarm）
           if (bA && !bA.isStatic) { bA.applyImpulse(-jx, -jy, waN.x, waN.y); bA.recordForce('constraint', -jx, -jy, waN.x, waN.y, this.id); }
           if (bB && !bB.isStatic) { bB.applyImpulse( jx,  jy, wbN.x, wbN.y); bB.recordForce('constraint',  jx,  jy, wbN.x, wbN.y, this.id); }
         }

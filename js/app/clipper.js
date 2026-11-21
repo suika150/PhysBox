@@ -7,6 +7,22 @@ const BOOLEAN_OPS = [
   ['diff',      '型抜き (A−B)', '最初に選んだ図形から、あとに選んだ図形を抜きます（選ぶ順番で結果が変わります）'],
   ['intersect', '交差 (A∩B)',  '選んだ図形が全部重なっている部分だけを残します'],
 ];
+// ★図形和で残る物体の性質は「最初に選んだ図形 A」から引き継ぐ（型抜き A−B の A と同じ基準）。
+//   以前は新規描画の既定値 drawProps から作っていたので、合成した瞬間に色・静止摩擦・
+//   衝突レイヤー・重力ON/OFFが「次に描く図形の設定」へ化けていた（見た目には
+//   最後に描いた図形の色になったように見える）。
+//   ここに並べるのは示強的な性質だけ。量（質量・電荷）は面積で決まるので別扱いにする。
+//   ★割れた破片（js/physics/fracture.js）も同じ表から引き継ぐ。
+const SHAPE_INHERIT_KEYS = [
+  'fillColor', 'strokeColor', 'strokeWidth', 'alpha', 'label',      // 見た目
+  'restitution', 'friction', 'frictionStatic', 'drag',              // 接触・抵抗
+  'isStatic', 'fixedRotation', 'hasGravity', 'layers',              // 力学の扱い
+  'ior', 'abbe', 'dispersion', 'reflectance', 'fresnel', 'reflective',  // 光学
+  'waveMode', 'waveIor',                                            // 波動
+  'conductor',                                                      // 電磁（導体か）
+  'showForces', 'showVelocity',                                     // ベクトル表示
+  'breakable', 'breakForce',                                        // 割れる（破片は fracture.js が外す）
+];
 // Clipper の結果（輪の集まり）を「外周＋穴」の組へほどく。図形和と歯車コートで共用。
 //   各リングの入れ子の深さを偶奇で判定：偶数=塗り(外周)、奇数=穴（符号規約に依存しない）
 function clipperOuterShapes(solution) {
@@ -143,22 +159,9 @@ function applyClipper(mode) {
   const srcDensity = (A.density != null)
     ? A.density
     : A.mass / Math.max(A.areaM2() * world.depth, 1e-9);
-  // ★残る物体の性質は「最初に選んだ図形 A」から引き継ぐ（型抜き A−B の A と同じ基準）。
-  //   以前は新規描画の既定値 drawProps から作っていたので、合成した瞬間に色・静止摩擦・
-  //   衝突レイヤー・重力ON/OFFが「次に描く図形の設定」へ化けていた（見た目には
-  //   最後に描いた図形の色になったように見える）。
-  //   ここに並べるのは示強的な性質だけ。量（質量・電荷）は面積で決まるので別扱いにする。
-  const INHERIT_KEYS = [
-    'fillColor', 'strokeColor', 'strokeWidth', 'alpha', 'label',      // 見た目
-    'restitution', 'friction', 'frictionStatic', 'drag',              // 接触・抵抗
-    'isStatic', 'fixedRotation', 'hasGravity', 'layers',              // 力学の扱い
-    'ior', 'abbe', 'dispersion', 'reflectance', 'fresnel', 'reflective',  // 光学
-    'waveMode', 'waveIor',                                            // 波動
-    'conductor',                                                      // 電磁（導体か）
-    'showForces', 'showVelocity',                                     // ベクトル表示
-  ];
+  // ★残る物体の性質は「最初に選んだ図形 A」から引き継ぐ（SHAPE_INHERIT_KEYS の★）
   const inherited = {};
-  for (const k of INHERIT_KEYS) inherited[k] = A[k];
+  for (const k of SHAPE_INHERIT_KEYS) inherited[k] = A[k];
   const made = [];   // 生成した物体と、その正味面積（電荷の配分に使う）
   // ★入力に含まれる「円」をワールド座標で集めておく（円弧の復元に使う）。
   //   円そのものだけでなく、すでに円弧を持つ図形も対象＝演算を重ねても円弧が残る。

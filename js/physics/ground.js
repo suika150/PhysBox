@@ -307,8 +307,8 @@ function prepareGroundContact(gc, dt) {
 function applyGroundWarm(gc, dt) {
   if (gc._skip) return;
   const w = warmStartAllowed(gc._vn0, dt) ? warmOf(gc.cid) : null;
-  gc._jn = w ? w.jn : 0;
-  gc._jt = w ? w.jt : 0;
+  gc._jn = w ? w.jn * _warmDtScale : 0;   // ★step.js の _warmDtScale の★
+  gc._jt = w ? w.jt * _warmDtScale : 0;
   gc._jnMax = gc._jn;
   _groundApplyN(gc, gc._jn);
   _groundApplyT(gc, gc._jt);
@@ -359,6 +359,9 @@ function finishGroundContact(gc) {
   // ★非弾性衝突ぶんも地面は受け取らない（物体側が全部）。力積は _jn + _jv（collision.js の★）
   addDissipatedHeat(gc.b, null,
     impactHeatOf(gc._jn + gc._jv, gc._vn0, _groundVelOn(gc, gc.nx, gc.ny), gc._hit, gc._vnPre));
+  // ★接触から受けた力（fracture.js）
+  noteContactImpulse(gc.b, (gc._jn + gc._jv) * gc.nx + gc._jt * gc._tdx,
+                           (gc._jn + gc._jv) * gc.ny + gc._jt * gc._tdy, gc.contactX, gc.contactY);
 }
 function correctGroundPosition(gc) {
   const { b, nx, ny } = gc;
@@ -622,10 +625,10 @@ function drawWalls() {
   const w = wallBounds();
   const a = worldToScreen(w.L, w.T), b = worldToScreen(w.R, w.B);
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.strokeStyle = cLine(0.35);
   ctx.lineWidth = 3;
   ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.strokeStyle = cLine(0.10);
   ctx.lineWidth = 10;
   ctx.strokeRect(a.x + 6, a.y + 6, (b.x - a.x) - 12, (b.y - a.y) - 12);
   ctx.restore();
@@ -636,7 +639,7 @@ function drawWalls() {
 function correctGroundTangentialDrift(gc) {
   if (gc._skip || !(gc._jn > 0)) return;
   const b = gc.b;
-  if (b.sleeping || b.invMass === 0) return;
+  if (b.sleeping || b.invMass === 0 || b._posDone) return;   // ★置き直した物体は動かさない（step.js 冒頭の★）
   let d = gc._drift;
   if (!(d === d) || d === 0) return;
   if (d >  CONTACT_DRIFT_MAX) d =  CONTACT_DRIFT_MAX;

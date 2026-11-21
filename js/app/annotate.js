@@ -430,14 +430,17 @@ function drawAnnotation(a) {
   else if (a.type === 'path') drawAnnotPath(a);
   ctx.restore();
 }
-// 組み上げた現在のパスを2度なぞる。1度目は暗い縁取り、2度目が本体。
-//   背景色は全体設定タブで明るくも暗くもできるので、縁が無いと背景に溶ける。
+// 組み上げた現在のパスを2度なぞる。1度目は縁取り、2度目が本体。
+//   背景は配色のプリセットで明るくも暗くもなるので、縁が無いと背景に溶ける。
+//   ★背景に溶ける色（白い背景に白など）は描く瞬間だけ前景色へ読み替え、縁取りは
+//     中身と反対の明るさにする（theme.js の cInk / cHaloFor。注釈の値は書き換えない）。
 //   ★塗りはしない。図形は枠線のみ（中を塗ると背景の物体が隠れて、注釈が
 //     「背景に置くもの」でなくなる）。
 function _annotStrokeTwice(color, width) {
+  color = cInk(color);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.strokeStyle = cHaloFor(color, 0.55);
   ctx.lineWidth = width + Math.max(1.5, width * 0.35);
   ctx.stroke();
   ctx.strokeStyle = color;
@@ -466,11 +469,13 @@ function drawAnnotText(a) {
   ctx.textAlign = 'left';          // 左うえ基準なので左揃え（入力欄の見え方と揃える）
   ctx.textBaseline = 'alphabetic'; // ★ベースラインは自前で置く（annotBaselineInLine の★）
   ctx.lineJoin = 'round';
-  // 背景色は全体設定タブで変えられる（明るくも暗くもなる）ので、文字そのものに
+  // 背景は配色のプリセットで明るくも暗くもなるので、文字そのものに
   // 縁取りを付けてどちらでも読めるようにする。地面や物体の上に重なっても同じ。
-  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  // ★色の読み替えと縁取りの明るさは _annotStrokeTwice と同じ（その★）
+  const color = cInk(a.color);
+  ctx.strokeStyle = cHaloFor(color, 0.7);
   ctx.lineWidth = Math.max(2, a.size * 0.09);
-  ctx.fillStyle = a.color;
+  ctx.fillStyle = color;
   const step = a.size * ANNOT_LINE_H;
   for (let i = 0; i < m.lines.length; i++) {
     const L = m.lines[i];
@@ -960,7 +965,7 @@ function drawAnnotDrawing() {
     const c = worldToScreen(mouseWorld.x, mouseWorld.y);
     ctx.beginPath();
     ctx.arc(c.x, c.y, ANNOT_ERASER_PX, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.strokeStyle = cLine(0.8);
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 3]);
     ctx.stroke();

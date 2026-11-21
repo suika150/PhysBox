@@ -54,7 +54,15 @@ function _waterColorLut() {
   }
   return _wLut;
 }
+// ★液体の種類ごとに1枚ずつ塗る（水・油・食塩水は色が違う。1枚にまとめると境目が見えない）。
+//   水だけのシーンは従来どおり1回だけ通る。
 function drawWaterSmooth() {
+  if (!particles.length) return;
+  const kinds = new Set();
+  for (const p of particles) if (p.type === 'fluid') kinds.add(p.prm);
+  for (const prm of kinds) _drawLiquidSmooth(prm);
+}
+function _drawLiquidSmooth(prm) {
   if (!particles.length) return;
   const W = canvas.width, H = canvas.height, z = cam.zoom;
   const viz = world.thermalOn && world.thermalViz;
@@ -66,7 +74,7 @@ function drawWaterSmooth() {
   const hw = W/(2*z), hh = H/(2*z), ext = Math.hypot(hw, hh) + R + c;   // ★回したカメラでも欠けない
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
   for (const p of particles) {
-    if (p.type !== 'fluid' || p.color !== p.prm.color) continue;
+    if (p.prm !== prm || p.color !== prm.color) continue;
     if (Math.abs(p.x - cam.x) > ext || Math.abs(p.y - cam.y) > ext) continue;
     if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
     if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
@@ -83,7 +91,7 @@ function drawWaterSmooth() {
   // ── 2) 場を積む ──
   const rd2 = (WATER_DROP_R*sp) ** 2;
   for (const p of particles) {
-    if (p.type !== 'fluid' || p.color !== p.prm.color) continue;
+    if (p.prm !== prm || p.color !== prm.color) continue;
     if (Math.abs(p.x - cam.x) > ext || Math.abs(p.y - cam.y) > ext) continue;
     const i0 = Math.max(0, Math.ceil((p.x - R - x0)/c)), i1 = Math.min(nx-1, Math.floor((p.x + R - x0)/c));
     const j0 = Math.max(0, Math.ceil((p.y - R - y0)/c)), j1 = Math.min(ny-1, Math.floor((p.y + R - y0)/c));
@@ -162,7 +170,7 @@ function drawWaterSmooth() {
     if (run >= 0) ctx.rect(x0 + run*c, yA, (nx - 1 - run)*c, c);
   }
   if (!viz) {
-    ctx.fillStyle = ctx.strokeStyle = PARTICLE_TYPES.fluid.color;
+    ctx.fillStyle = ctx.strokeStyle = prm.color;
     ctx.fill();
     // ★同じ色で細く縁取る。セル片どうしの継ぎ目がアンチエイリアスで細く透け、中倍率で
     //   水面に黒いギザギザが並んで見えた（塗りだけでは埋まらない）
@@ -230,10 +238,10 @@ function drawThermalLegend() {
     ctx.fillStyle = tempToColor(C2K(lo + (hi - lo) * i / (W - 1)));
     ctx.fillRect(x + i, y, 1, H);
   }
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.strokeStyle = cLine(0.5);
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1);
-  ctx.fillStyle = '#ddd';
+  ctx.fillStyle = cText(0.85);
   ctx.font = '11px sans-serif';
   ctx.textBaseline = 'top';
   // ★小数の桁は範囲の広さで決める。整数固定だと、狭い範囲にしたとき3つとも同じ数字に
@@ -407,7 +415,7 @@ function drawPreview() {
         // ドラッグの線（点線）。カーソルの側へ引く＝引っぱる方式では発射方向の逆、
         // 狙う方式では発射方向と同じ側になる。どちらも「線の長さ＝速さ」で読み方は同じ。
         const gs = aim ? 1 : -1;
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = cLine(0.3);
         ctx.setLineDash([4,4]);
         ctx.beginPath(); ctx.moveTo(s.x, s.y);
         ctx.lineTo(s.x + gs*dirx*pullPx, s.y + gs*diry*pullPx); ctx.stroke();
@@ -598,7 +606,7 @@ function drawPreview() {
         i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
       }
       ctx.closePath();
-      ctx.strokeStyle = '#eceff1'; ctx.lineWidth = 1.5; ctx.setLineDash([]); ctx.stroke();
+      ctx.strokeStyle = cText(0.9); ctx.lineWidth = 1.5; ctx.setLineDash([]); ctx.stroke();
     }
     ctx.restore(); return;
   }
@@ -693,7 +701,7 @@ function drawGearPreviewInfo(desc) {
   const g = desc.gear, sc = worldToScreen(desc.x, desc.y);
   ctx.save();
   ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
-  ctx.strokeStyle = desc.meshWith ? '#66bb6a' : 'rgba(255,255,255,0.5)';
+  ctx.strokeStyle = desc.meshWith ? '#66bb6a' : cLine(0.5);
   ctx.beginPath(); ctx.arc(sc.x, sc.y, g.m * g.z / 2 * cam.zoom, 0, Math.PI * 2); ctx.stroke();
   if (desc.meshWith) {             // かみ合う相手の中心と結ぶ（吸い付いたことが見える）
     const o = worldToScreen(desc.meshWith.x, desc.meshWith.y);
@@ -701,7 +709,7 @@ function drawGearPreviewInfo(desc) {
   }
   ctx.setLineDash([]);
   ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = desc.meshWith ? '#66bb6a' : '#ffffff';
+  ctx.fillStyle = desc.meshWith ? '#66bb6a' : cText(1);
   const zA = desc.meshWith && desc.meshWith.gear ? desc.meshWith.gear.z : 0;
   ctx.fillText(zA ? `歯数 ${g.z}（${zA}とかみ合う）` : desc.meshWith ? `歯数 ${g.z}（かみ合う）` : `歯数 ${g.z}`, sc.x, sc.y);
   ctx.restore();
@@ -782,18 +790,18 @@ function drawPredictedPaths(paths) {
     const s1 = worldToScreen(p.straight.x, p.straight.y);
     if (Math.hypot(s1.x - s0.x, s1.y - s0.y) < 4) continue;   // 短すぎる線は出さない
     ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.strokeStyle = cLine(0.35);
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(s0.x, s0.y); ctx.lineTo(s1.x, s1.y); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillStyle = cLine(0.5);
     for (const m of p.straightMarks) {                        // 予測線の点と同じ時刻の点
       const s = worldToScreen(m.x, m.y);
       ctx.beginPath(); ctx.arc(s.x, s.y, 1.8, 0, Math.PI*2); ctx.fill();
     }
     if (paths.length === 1) {                                 // 何の線かは1本のときだけ書く
       ctx.font = '10px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillStyle = cText(0.6);
       ctx.fillText('まっすぐ進んだ場合', s1.x + 6, s1.y - 4);
     }
   }

@@ -99,7 +99,7 @@ const RUN = async ({ which, damp }) => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
   const r = await page.evaluate(RUN, { which, damp });

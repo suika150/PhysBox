@@ -95,8 +95,9 @@ window.__run = function (cubes, settle, avg, cfg) {
   const bodies = __buildCup(cubes);
   for (let i = 0; i < settle; i++) simTick();
   // ブロックが占める x の帯（±半幅＋余裕）を避けて水面を読む
-  const bands = cubes.map(c => [c.x - 60, c.x + 60]);
-  const keep = x => bands.every(([lo, hi]) => x < lo || x > hi);
+  //   ★帯はいまのブロックの外接矩形 ± 1 列（固定の帯だと、横へ流れたブロックの下の水を
+  //     水面として読む。measure-liquids.js の __sink の★）
+  const keep = x => bodies.every(b => x < b._aabb.minX - COLW || x > b._aabb.maxX + COLW);
   const acc = bodies.map(() => 0);
   const tilt = bodies.map(() => 0);
   let lvSum = 0;
@@ -120,12 +121,14 @@ window.__run = function (cubes, settle, avg, cfg) {
 // ★つまみの題材：一度落ち着いた水の中で密度だけを変える。新しく落とす single とは
 //   初期条件が違う（ブロックはすでに水面にいる）ので、同じ値に落ち着くかを別に測る。
 const KNOB = `
-window.__knob = function (dens, settle0, settle, avg) {
+window.__knob = function (dens, settle0, settle, avg, cfg) {
   __seedRandom(12345);
+  if (cfg) Object.assign(SPH, cfg);
   const bodies = __buildCup([{ d: 400, x: -150 }, { d: 1000, x: 0 }, { d: 2000, x: 150 }]);
   const wood = bodies[0];
   for (let i = 0; i < settle0; i++) simTick();
-  const keep = x => [[-210, -90], [-60, 60], [90, 210]].every(([lo, hi]) => x < lo || x > hi);
+  // ★帯はいまの外接矩形 ± 1 列（__run と同じ。固定の帯だと流れた箱の下の水を水面として読む）
+  const keep = x => bodies.every(b => x < b._aabb.minX - COLW || x > b._aabb.maxX + COLW);
   const out = [];
   for (const d of dens) {
     applyBodyProp(wood, "density", d);
@@ -157,7 +160,7 @@ window.__knob = function (dens, settle0, settle, avg) {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
   await page.evaluate(HARNESS + SCENE + RUN + KNOB);
@@ -190,7 +193,7 @@ window.__knob = function (dens, settle0, settle, avg) {
 
   if (mode === "knob") {
     const DENS = [200, 400, 600, 800, 1000, 1200, 800, 400];
-    const r = await page.evaluate(([d, s0, s, a]) => __knob(d, s0, s, a), [DENS, SETTLE, 600, AVG]);
+    const r = await page.evaluate(([d, s0, s, a, c]) => __knob(d, s0, s, a, c), [DENS, SETTLE, 600, AVG, CFG]);
     console.log("── 浮力デモの木の密度をつまみで変える（" + SETTLE + "tick 落ち着かせ → 1段ごとに 600tick 待って " + AVG + "tick 平均）──");
     console.table(r.map(x => ({ 密度: x.d, 沈み: x.sink, 理論: Math.min(100, x.d / 10),
                                  "y の σ[px]": x.sdY, "中央(1000)の沈み": x.mid })));

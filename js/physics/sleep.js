@@ -20,7 +20,7 @@ function _sleepReach(b) {
   const dx = Math.max(b.x - a.minX, a.maxX - b.x), dy = Math.max(b.y - a.minY, a.maxY - b.y);
   return Math.sqrt(dx*dx + dy*dy);
 }
-function updateSleeping(subDt) {
+function updateSleeping(subDt, contacts) {
   const linTh2 = SLEEP_LIN_TH * SLEEP_LIN_TH, angTh = SLEEP_ANG_TH, timeTh = SLEEP_TIME_TH;   // [px/s]², [rad/s], [s]
   const jointTimeTh = 1.0;   // ジョイント接続物は少し長めに様子を見てから眠らせる
   // ① 1つずつ「眠る準備ができたか」（しきい値を下回り続けた時間）を数える。ここでは眠らせない
@@ -37,9 +37,10 @@ function updateSleeping(subDt) {
     if (b.held || bodyHasThrusters(b) || b.showForces || bodyInActiveFlow(b)) {
       b.sleeping = false; b.sleepTimer = 0; continue;
     }
+    if (b.sleeping) continue;   // 眠っている者は速度 0 のまま。準備の時間もそのまま（②で島ごとに決める）
     if ((b.vx*b.vx + b.vy*b.vy) < linTh2 && Math.abs(b.av) < angTh
         && Math.abs(b.av) * _sleepReach(b) < SLEEP_LIN_TH) b.sleepTimer += subDt;
-    else { b.sleepTimer = 0; b.sleeping = false; }
+    else b.sleepTimer = 0;
   }
   // ★モーターが「回せ」と言われている軸につながった物体は眠らせない（上の「外から力を
   //   受け続けているもの」と同じ扱い。動力を付けた物体を眠らせないのと同じ理由）。
@@ -54,12 +55,20 @@ function updateSleeping(subDt) {
     if (A && !A.isStatic) { A.sleeping = false; A.sleepTimer = 0; }
     if (B && !B.isStatic) { B.sleeping = false; B.sleepTimer = 0; }
   }
-  // ② ジョイントでつながったまとまり（島）は、全員の準備ができたときにそろって眠る。
-  //   1人でもまだなら全員起きたまま。★準備の時間（sleepTimer）は起こしても消さない。
+  // ② ジョイントか接触でつながったまとまり（島）は、全員の準備ができたときにそろって眠る。
+  //   1人でもまだなら全員起きたまま。★起きている者の準備の時間（sleepTimer）は、島の都合では消さない。
   //   以前は「眠った者を、起きている相手が起こしてタイマーを 0 に戻す」形だったので、
   //   島の中でタイマーがずれると交互に起こし合って永久に眠れなかった（実測：自己保持の
   //   デモで止まった台車と後輪・前輪が 0.5秒ずれて 1秒ごとに起こし合い、極小の揺れが
   //   モーター端子に 1e-7〜5e-6A の電流を流し続けた＝電流の点が止まったまま残った）。
+  //   ★接触も島をつなぐ（2026-11-20。Box2D と同じ形）。以前は物体1つずつだったので、
+  //     積んだ山は互いに押し合う微小な速度で 120 個のうち 0〜3 個しか眠れず、眠る・起きるの
+  //     たびに支えが抜けて沈んだ（実測：40px の箱の柱は休眠 ON のほうが早く倒れた。
+  //     15段 31→16秒・20段 17→6.4秒）。島ごとにすると山は 10秒以内に丸ごと眠り、
+  //     柱は 10〜30段が 120秒立つ。山の 1tick は円 8.5→3.5ms・箱 15.8→7.0ms に軽くなる。
+  //   ★眠っている者は「準備ができた」側に数える。島が起きるときは全員のタイマーを 0 に
+  //     戻して、そろって数え直す（ずれたまま起こし合う上の事故にならない）。
+  //   ☆静止した地面・固定物は島をつながない（それを介して無関係な山どうしが1つにならない）。
   const parent = new Map();
   const find = b => { let r = b; while (parent.get(r) !== r) r = parent.get(r); parent.set(b, r); return r; };
   const unite = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
@@ -68,15 +77,16 @@ function updateSleeping(subDt) {
     const A = j.bodyA, B = j.bodyB;
     if (A && B && parent.has(A) && parent.has(B)) unite(A, B);
   }
+  if (contacts) for (const c of contacts) if (parent.has(c.A) && parent.has(c.B)) unite(c.A, c.B);
   const notReady = new Set();
   for (const b of objects) {
     if (!parent.has(b)) continue;
     const th = jointedBodies.has(b) ? jointTimeTh : timeTh;
-    if (b.frozen || b.isSpawner || !(b.sleepTimer > th)) notReady.add(find(b));
+    if (b.frozen || b.isSpawner || !(b.sleeping || b.sleepTimer > th)) notReady.add(find(b));
   }
   for (const b of objects) {
     if (!parent.has(b) || b.frozen || b.isSpawner) continue;
-    if (notReady.has(find(b))) { b.sleeping = false; continue; }
+    if (notReady.has(find(b))) { if (b.sleeping) { b.sleeping = false; b.sleepTimer = 0; } continue; }
     if (!b.sleeping) { b.sleeping = true; b.vx = 0; b.vy = 0; b.av = 0; }
   }
 }

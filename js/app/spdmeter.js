@@ -261,7 +261,7 @@ function buildSpdMeterPanel(m) {
     '<div class="' + cls + '" style="font-size:15px;font-weight:600;white-space:nowrap"></div></div>';
   panel.innerHTML =
     '<div class="vg-header">' +
-      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">速さの分布 ' + m.id + '</span>' +
+      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">速さの分布 ' + escHtml(m.id) + '</span>' +
       '<span class="vg-status sm-sum" style="flex:1 1 auto;min-width:0;white-space:nowrap;' +
         'overflow:hidden;text-overflow:ellipsis"></span>' +
       '<span class="vg-close sm-fold" title="畳む／開く">⌄</span>' +
@@ -393,7 +393,7 @@ function _drawSpdMeterGraph(m, cv) {
   const dpr = window.devicePixelRatio || 1;
   const W = SPDM_GRAPH_W, H = SPDM_GRAPH_H;
   if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
-  const g = cv.getContext('2d');
+  const g = themeHookContext(cv.getContext('2d'), true);   // ★パネルの配色に合わせる（theme.js）
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
   const css = getComputedStyle(document.documentElement);

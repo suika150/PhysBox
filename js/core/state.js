@@ -35,7 +35,7 @@ const world = {
   // ★周囲の温度 [K]。熱放射（js/physics/radiation.js）で「どこへ放射するか」の相手。
   //   放射率が0の物体しか無ければ一切使われないので、既定のシーンには影響しない。
   //   ★値は 20℃ ＝ ROOM_K だが、その定数は thermal.js にあり、このファイルより後に
-  //     読まれる（physBox.html の script 列）。ここでは数値で書くこと。
+  //     読まれる（index.html の script 列）。ここでは数値で書くこと。
   ambientTemp: 293.15,
   thermalViz: false,          // ★温度で色をつける（表示だけ。物理は変わらない）
   thermalVizMin: 0,           // [℃] 色の下端
@@ -50,7 +50,7 @@ const world = {
   wallW: 24,                  // [m] 幅（x = ±wallW/2）
   wallH: 60,                  // [m] 高さ（床から上へ）。横より広く取り、天井が実験の邪魔をしないように
   wallRest: 0.4,              // 反発係数（0=ぶつかって止まる／1=完全弾性）
-  bgColor: '#12141a', showGrid: true, gridSize: 30,   // [px]。30px = 0.3 m（太線は5本ごと＝1.5 m）
+  showGrid: true, gridSize: 30,   // [px]。30px = 0.3 m（太線は5本ごと＝1.5 m）
   showAxes: true,             // ★原点と座標軸（x=0 / y=0）を描くか
   showGravityLine: false,     // ★重力に垂直な線（見かけの水平）。重力Xを使うときだけ要るので既定OFF
   showGridLabels: true,       // ★グリッドの目盛り（軸に沿って書く「何 m か」の数字）を描くか
@@ -128,6 +128,9 @@ let heaterPower = 200;               // [W] これから置く領域の出力（
 //   ただし中身は別のソルバ（SPH と分子運動論）なので、ツール名は 'fluid'／'gas' の2つのまま。
 //   これはボタンを押したときにどちらで始めるか（最後に選んだほう）。
 let particleToolKind = 'fluid';      // 'fluid'=液体 / 'gas'=気体
+// ★液体を置くときの種類（'water'/'oil'/'brine'。particles.js の LIQUID_TYPES）。
+//   ツール名は 'fluid' のまま増やさない（液体はどれも同じ SPH で動き、違うのは密度と材料定数だけ）。
+let particleLiquid = 'water';
 // ★流れの場（矩形）。風・水流。中の物体は相対速度に応じた抗力を受け、流速へ漸近する
 //   （js/physics/flow-field.js）。系の外から仕事を入れる入口という点は加熱・冷却と同じ。
 let flowFields = [];

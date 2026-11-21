@@ -244,11 +244,11 @@ function drawCameraBadge() {
   //   左下は力の凡例、右はグラフの窓が使う。ここが唯一どのデモでも空いている。
   const w = ctx.measureText(txt).width + 18;
   const x = canvas.width/2 - w/2, y = canvas.height - 30;
-  ctx.fillStyle = rot ? 'rgba(79,195,247,0.22)' : 'rgba(255,255,255,0.10)';
-  ctx.strokeStyle = rot ? 'rgba(79,195,247,0.8)' : 'rgba(255,255,255,0.35)';
+  ctx.fillStyle = rot ? 'rgba(79,195,247,0.22)' : cLine(0.10);
+  ctx.strokeStyle = rot ? 'rgba(79,195,247,0.8)' : cLine(0.35);
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(x, y, w, 22, 5); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = rot ? '#bde7fb' : 'rgba(255,255,255,0.75)';
+  ctx.fillStyle = rot ? (isLightCanvas() ? '#0277bd' : '#bde7fb') : cText(0.75);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(txt, canvas.width/2, y + 11);
   ctx.restore();

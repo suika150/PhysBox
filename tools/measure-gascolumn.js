@@ -18,7 +18,7 @@ const damp   = process.argv[6] === undefined ? null : Number(process.argv[6]);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
 

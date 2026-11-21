@@ -9,7 +9,7 @@ const gifRec = {
 let _gifWorkerUrl = null;
 // gif.js の worker を blob 化して返す（Worker はページと同一オリジンから読む必要がある）。
 //   ★ソースは lib/gif.worker.embed.js（<script> で読み込み済みのただの文字列）から取る。
-//     以前は fetch('lib/gif.worker.js') で取っていたが、physBox.html を file:// で
+//     以前は fetch('lib/gif.worker.js') で取っていたが、index.html を file:// で
 //     直接開くと fetch は CORS で必ず失敗する（"Failed to fetch"）。カウントダウンの
 //     あとに「録画の初期化に失敗しました」と出ていたのはこれ。
 //     埋め込みが無い環境のために fetch も残してあるが、通常はそこへは来ない。

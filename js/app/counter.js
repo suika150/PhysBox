@@ -260,7 +260,7 @@ function buildCounterPanel(c) {
   panel.style.width = (COUNTER_GRAPH_W + 16) + 'px';
   panel.innerHTML =
     '<div class="vg-header">' +
-      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">カウンタ ' + c.id + '</span>' +
+      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">カウンタ ' + escHtml(c.id) + '</span>' +
       '<span class="vg-status ct-sum" style="flex:1 1 auto;min-width:0;white-space:nowrap;' +
         'overflow:hidden;text-overflow:ellipsis"></span>' +
       '<span class="vg-close ct-fold" title="畳む／開く">⌄</span>' +
@@ -416,7 +416,7 @@ function _drawCounterGraph(c, cv) {
   const dpr = window.devicePixelRatio || 1;
   const W = COUNTER_GRAPH_W, H = COUNTER_GRAPH_H;
   if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
-  const g = cv.getContext('2d');
+  const g = themeHookContext(cv.getContext('2d'), true);   // ★パネルの配色に合わせる（theme.js）
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
   const css = getComputedStyle(document.documentElement);

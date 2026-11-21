@@ -294,7 +294,8 @@ function ctxMirrorChk(id, label) {
   const el = document.getElementById(id);
   if (!ctxPanelShown(el)) return '';
   const L = _ctxPanelLabel(el);
-  const text = label || L.text;
+  // ★パネルの見出しは textContent（素の文字）。物体の名前が入りうるので HTML に戻すときは逃がす
+  const text = label || escHtml(L.text);
   if (el.disabled) return ctxItemOff(ctxChk(null, el.checked) + text, _ctxEsc(L.title));
   return ctxItem(ctxChk('ctx-m-' + id, el.checked) + text,
                  `event.stopPropagation();ctxMirrorToggle('${id}')`, null, _ctxEsc(L.title) || null);
@@ -311,16 +312,17 @@ function ctxMirrorSelect(id, label) {
   const el = document.getElementById(id);
   if (!ctxPanelShown(el) || !el.options.length) return '';
   const L = _ctxPanelLabel(el);
-  const cur = el.selectedIndex >= 0 ? el.options[el.selectedIndex].textContent.trim() : '';
+  // ★選択肢の文字は素の文字（物体の名前の一覧など）。HTML に戻すので逃がす
+  const cur = el.selectedIndex >= 0 ? escHtml(el.options[el.selectedIndex].textContent.trim()) : '';
   let inner = '';
   for (let i = 0; i < el.options.length; i++) {
     const o = el.options[i];
     inner += o.disabled
-      ? ctxItemOff(ctxChk(null, false) + o.textContent.trim(), _ctxEsc(o.title || ''))
-      : ctxItem(ctxChk(null, i === el.selectedIndex) + o.textContent.trim(),
+      ? ctxItemOff(ctxChk(null, false) + escHtml(o.textContent.trim()), _ctxEsc(o.title || ''))
+      : ctxItem(ctxChk(null, i === el.selectedIndex) + escHtml(o.textContent.trim()),
                 `ctxMirrorPick('${id}',${i})`, null, _ctxEsc(o.title || '') || null);
   }
-  return ctxSubmenu(`${label || L.text}：<span style="color:var(--text2)">${cur}</span>`, inner, false);
+  return ctxSubmenu(`${label || escHtml(L.text)}：<span style="color:var(--text2)">${cur}</span>`, inner, false);
 }
 function ctxMirrorPick(id, i) {
   const el = document.getElementById(id);
@@ -332,7 +334,7 @@ function ctxMirrorPick(id, i) {
 function ctxMirrorBtn(id, label) {
   const el = document.getElementById(id);
   if (!ctxPanelShown(el)) return '';
-  const text = label || el.textContent.trim();
+  const text = label || escHtml(el.textContent.trim());
   if (el.disabled) return ctxItemOff(text, _ctxEsc(el.title || ''));
   return ctxItem(text, `ctxMirrorClick('${id}')`, null, _ctxEsc(el.title || '') || null);
 }
@@ -541,12 +543,13 @@ function ctxGasLinkSub(ch) {
     // 相手がすでに別の相手とつながっているか（つなぐと、そちらの管は外れる）
     const busy = !on && o.linkId != null && o.linkId !== ch.id
                ? gasChambers.find(c => c.id === o.linkId) : null;
-    const label = ctxChk(null, on) + gasChamberLabel(o)
+    // ★名前は物体の名前（シーンの中身）なので逃がす。id も数にしてから onclick に入れる
+    const label = ctxChk(null, on) + escHtml(gasChamberLabel(o))
                 + (busy ? `<span style="color:var(--text2);font-size:11px">（いま `
-                        + gasChamberLabel(busy) + ` と接続）</span>` : '');
-    inner += ctxItem(label, `ctxGasLink(${on ? 'null' : o.id})`, null,
+                        + escHtml(gasChamberLabel(busy)) + ` と接続）</span>` : '');
+    inner += ctxItem(label, `ctxGasLink(${on ? 'null' : Number(o.id)})`, null,
       on ? 'もう一度押すと管を外します'
-         : (busy ? `つなぐと、${gasChamberLabel(o)} と ${gasChamberLabel(busy)} の管は外れます`
+         : _ctxEsc(busy ? `つなぐと、${gasChamberLabel(o)} と ${gasChamberLabel(busy)} の管は外れます`
                  + '（管は1つの気体につき1本までです）。\n' + tip
                  : tip));
   }
@@ -616,10 +619,11 @@ function ctxSameKindTarget() {
   }
   return null;
 }
+let _ctxKindGroups = [];   // 範囲選択の「種別で選び直す…」の中身（buildCtxItems が作る）
 function ctxSameKindItems() {
   const t = _ctxSameTarget = ctxSameKindTarget();
   if (!t) return '';
-  const name = _subLabel(BULK_KINDS[t.kind], t.o);
+  const name = escHtml(_subLabel(BULK_KINDS[t.kind], t.o));   // ★型名の言い換えが無いと型名（シーンの中身）がそのまま来る
   const nKind = sameKindList(t, false).length;
   const hasSettings = !!BULK_SETTINGS[t.kind];
   const nSame = hasSettings ? sameKindList(t, true).length : 0;
@@ -644,10 +648,11 @@ function buildCtxItems() {
     const gs = bulkGroupsInRect(lastSelRect);
     if (gs.length) {
       let sub = '';
-      for (const g of gs) {
-        const arg = g.sub == null ? 'null' : `'${g.sub}'`;
-        sub += `<div class="ctx-item" onclick="selectOnlyKind('${g.kind}',${arg})">${g.label}のみ選択（${g.n}）</div>`;
-      }
+      // ★kind・sub は型名（シーンの中身）から来るので、onclick の文字列に埋めず番号で引く
+      _ctxKindGroups = gs;
+      gs.forEach((g, i) => {
+        sub += `<div class="ctx-item" onclick="selectOnlyKind(_ctxKindGroups[${i}].kind,_ctxKindGroups[${i}].sub)">${escHtml(g.label)}のみ選択（${g.n}）</div>`;
+      });
       pre += `<div class="ctx-label">選択範囲（${gs.length}種別）</div>` +
              `<div class="ctx-item ctx-submenu-parent" style="display:flex;align-items:center">` +
                `<span>種別で選び直す…</span><span style="color:var(--text2);margin-left:auto">▶</span>` +
@@ -666,7 +671,7 @@ function buildCtxItems() {
   if (_ctxCandidates.length >= 2) {
     let sub = '';
     for (let i = 0; i < _ctxCandidates.length; i++)
-      sub += `<div class="ctx-item" onclick="ctxSelectCandidate(${i})">${_ctxCandidates[i].label}</div>`;
+      sub += `<div class="ctx-item" onclick="ctxSelectCandidate(${i})">${escHtml(_ctxCandidates[i].label)}</div>`;   // ★物体・気体の名前が入る
     pre += `<div class="ctx-label">この場所の要素（${_ctxCandidates.length}）</div>` +
           `<div class="ctx-item ctx-submenu-parent" style="display:flex;align-items:center">` +
             `<span>選択…</span><span style="color:var(--text2);margin-left:auto">▶</span>` +
@@ -775,7 +780,7 @@ function buildCtxItems() {
         sep + item(delLabel, 'ctxDelete()', 'color:#ef5350');
     }
     const _j = joints.find(x => x.id === selectedJointId);
-    return pre + `<div class="ctx-label">${_bulk ? _bulk.label : 'ジョイント'}${nSuffix}</div>` +
+    return pre + `<div class="ctx-label">${_bulk ? escHtml(_bulk.label) : 'ジョイント'}${nSuffix}</div>` +
       ropeTipItems(_j) +
       // ★モーターの「放したら止める」。リモコンを放した瞬間の振る舞い（惰性で回る／姿勢を
       //   保つ）が変わるので、荷を載せた台を少しずつ傾ける題材では走らせながら何度も往復する。

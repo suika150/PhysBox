@@ -885,10 +885,14 @@ function toggleHeatFieldMenu(e) {
 //   ボタンが「加熱」のままだと冷却の枠を置いてしまう（お絵描きのモードと同じ事故）。
 function syncHeatFieldToolButton() {
   const el = document.getElementById('t-heater-icon');
-  const use = el && el.querySelector('use');   // アイコンは SVG スプライト（physBox.html 冒頭）
+  const use = el && el.querySelector('use');   // アイコンは SVG スプライト（index.html 冒頭）
   if (use) use.setAttribute('href', heaterPower < 0 ? '#ti-cool' : '#ti-heat');
 }
 // ★選んでいる種類を左ツールバーのアイコンに出す（加熱・冷却と同じ理由：窓を閉じてもモードは残る）
+// これから置く粒子の既定の色（液体なら選んだ種類の色、気体なら気体の色）
+function particleToolDefaultColor() {
+  return particleToolKind === 'gas' ? PARTICLE_TYPES.gas.color : liquidPrm(particleLiquid).color;
+}
 function syncParticleToolButton() {
   const el = document.getElementById('t-particle-icon');
   const use = el && el.querySelector('use');
@@ -999,6 +1003,7 @@ function toggleParticleMenu(e) {
       <span id="pt-close" style="cursor:pointer;color:var(--text2);font-size:15px;line-height:1">×</span>
     </div>
     <div class="material-grid" id="pt-kinds" style="margin-bottom:4px"></div>
+    <div class="material-grid" id="pt-liquids" style="margin-bottom:4px"></div>
     <div id="pt-kind-note" style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.5"></div>
     <div style="font-size:10px;color:var(--text2);margin-bottom:4px">
       1度に置く数: <span id="pt-spawn-val" style="color:var(--accent)">${particleSpawnPerEvent}</span> 個
@@ -1010,13 +1015,14 @@ function toggleParticleMenu(e) {
     </div>
     <input type="range" id="pt-max" min="100" max="20000" step="100" style="width:100%">
     <div style="display:flex;align-items:center;gap:6px;margin-top:10px">
-      <div class="color-swatch" id="pt-swatch" style="background:${particleColor || PARTICLE_TYPES[particleToolKind].color}"></div>
+      <div class="color-swatch" id="pt-swatch" style="background:${particleColor || particleToolDefaultColor()}"></div>
       <span style="font-size:10px;color:var(--text2)">印の色</span>
       <button class="btn-small" id="pt-nocolor" style="margin-left:auto" title="これから置く粒子を、型の色（液体は水色・気体は薄い水色）に戻します">既定</button>
     </div>
     <div style="font-size:10px;color:var(--text2);margin-top:4px;line-height:1.5">
       色は目印で、物理には効きません（赤い水と青い水は同じ水。質量も比熱も同じです）。
-      「どの水がどこへ行くか」「混ざって元に戻らないこと」を追うのに使います。<br>
+      「どの水がどこへ行くか」「混ざって元に戻らないこと」を追うのに使います。
+      密度の違う液体を置くときは、上で種類（水・油・食塩水）を選びます。<br>
       ※印を付けた粒子は、全体設定の「温度で色をつける」が ON でも印の色のままです。
     </div>
     <button class="btn-small" id="pt-clear" style="width:100%;margin-top:8px">粒子をすべて消去</button>
@@ -1049,11 +1055,29 @@ function toggleParticleMenu(e) {
       b.onclick = () => { particleToolKind = o.v; setTool(o.v); paint(); };
       grid.appendChild(b);
     }
+    // ★液体の種類（水・油・食塩水）。液体を選んでいるときだけ出す。
+    //   違うのは密度と材料定数だけ（particles.js の LIQUID_TYPES の★）なので、置き方は同じ。
+    const lg = menu.querySelector('#pt-liquids');
+    lg.innerHTML = '';
+    lg.style.display = particleToolKind === 'fluid' ? '' : 'none';
+    if (particleToolKind === 'fluid') for (const k of Object.keys(LIQUID_TYPES)) {
+      const b = document.createElement('button');
+      b.className = 'mat-btn' + (k === particleLiquid ? ' active' : '');
+      b.textContent = LIQUID_LABELS[k];
+      b.title = `密度 ${LIQUID_TYPES[k].density} kg/m³`;
+      b.onclick = () => { particleLiquid = k; paint(); };
+      lg.appendChild(b);
+    }
     // ★2つは別の計算で動く（混ぜられない）ことを、選んだ側の言葉で1行だけ書く
+    const LIQ_NOTE = {
+      water: '水の粒（1000 kg/m³）。下にたまって水面ができ、物体を浮かべます。',
+      oil:   '油の粒（920 kg/m³）。水より軽いので、水と入れると上に分かれます。',
+      brine: '食塩水の粒（1200 kg/m³）。水より重いので、水の下にたまります。',
+    };
     menu.querySelector('#pt-kind-note').textContent = particleToolKind === 'fluid'
-      ? '水の粒。下にたまって水面ができ、物体を浮かべます。'
+      ? LIQ_NOTE[particleLiquid]
       : '気体の分子。減速せずに飛び回り、壁にぶつかり続けます。';
-    if (!particleColor) showParticleSwatch(PARTICLE_TYPES[particleToolKind].color);
+    if (!particleColor) showParticleSwatch(particleToolDefaultColor());
     syncParticleToolButton();        // 左ツールバーのアイコン
   };
   paint();

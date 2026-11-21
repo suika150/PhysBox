@@ -1,7 +1,7 @@
 # PhysBox
 
 高校物理の教材用 2D 物理サンドボックス（Algodoo 系）。力学・熱・気体・波動・光学・電磁気を
-1つのキャンバスで扱う。ブラウザで `physBox.html` を開くだけで動く。
+1つのキャンバスで扱う。ブラウザで `index.html` を開くだけで動く。
 
 ---
 
@@ -10,7 +10,7 @@
 このリポジトリは 93 ファイル・約 51,000 行あり、素朴に読むとコンテキストをすぐ使い切る。
 以下は**節約のためのルールではなく、作業手順そのもの**として守ること。
 
-- **`physBox.html` を全文で読まない。** 1,002 行だが 1行平均 130 字前後あり、
+- **`index.html` を全文で読まない。** 1,155 行だが 1行平均 155 字前後あり、
   1回読むだけで数万トークン使う。中身は静的な UI マークアップなので全体を見る必要はまずない。
   `grep -n` で当たりをつけてから、その周辺だけ範囲指定で読む。
 - **横断調査は Explore サブエージェントに投げる。** 「この機能はどこで配線されているか」のように
@@ -25,7 +25,7 @@
 
 ## 2. 実行と確認
 
-ビルド・テスト・パッケージマネージャは**存在しない**。`physBox.html` を直接開くだけ。
+ビルド・テスト・パッケージマネージャは**存在しない**。`index.html` を直接開くだけ。
 `file://` で動かす前提なので `fetch` は使えない（Web Worker のソースも script 経由で埋め込んでいる）。
 
 画面を確認するときは Playwright のスクリーンショットツールを使う：
@@ -67,12 +67,12 @@ node tools/shot.js out.png --full                   # ページ全体（UI を�
 
 ## 3. アーキテクチャ
 
-**モジュールもビルドも無い。** 全 93 ファイルが `physBox.html` の `<script>` タグで順に読み込まれ、
+**モジュールもビルドも無い。** 全 93 ファイルが `index.html` の `<script>` タグで順に読み込まれ、
 すべてグローバルスコープを共有する（約 1,750 個のトップレベル関数と 16 クラス）。
 
-- 読み込み順は `physBox.html` の 903〜1,001 行目。**依存順に並んでいるので順序に意味がある。**
+- 読み込み順は `index.html` の 1,044〜1,154 行目（`lib/` は 9〜15 行目）。**依存順に並んでいるので順序に意味がある。**
   `js/core/units.js` が先頭（定数とキャンバス取得）、`js/app/boot.js` が末尾で、中身は `init();` の 1 行だけ。
-- **新しい JS ファイルを足したら、`physBox.html` の script 列に追加すること**（忘れると読み込まれない）。
+- **新しい JS ファイルを足したら、`index.html` の script 列に追加すること**（忘れると読み込まれない）。
   位置は依存元より後ろ、`boot.js` より前。
 - `js/app/init.js` の `init()` が起動処理。先頭で `captureInitialState()` が `world`/`ground`/`drawProps`
   を控える（「新規作成」の戻り先）。全スクリプト読み込み後に呼ばれる前提に依存している。
@@ -135,7 +135,8 @@ node tools/shot.js out.png --full                   # ページ全体（UI を�
 `ground.js` / `predict.js`(速度ツールの予測軌道) / `energy.js`(力学的エネルギー。**持ち主は物体でなく系**) /
 `thermal.js`(比熱・熱伝導) / `gas.js`(GasChamber) / `vessel.js`(PistonVessel) / `heat-field.js`(加熱冷却領域) /
 `particles.js`(SPH。**水だけ**。二重密度緩和) / `molecule.js`(気体分子運動論。**完全弾性衝突・減衰なし**) /
-`gravitation.js` / `sleep.js`
+`gravitation.js` / `sleep.js` /
+`fracture.js`(**割れる物体**。接触から受けた力を tick 平均で測って判定し、tick の最後に Clipper で破片へ置き換える。割れ方は演出)
 
 **粒子は1本の `particles` 配列に同居し、`step.js` が `prm.kinetic` で2つのソルバへ振り分ける。**
 SPH（位置ベースの密度緩和）と分子運動論（速度ベースの弾性衝突）は前提が正反対なので混ぜられない。
@@ -166,12 +167,13 @@ SPH（位置ベースの密度緩和）と分子運動論（速度ベースの�
 `clipper.js`(図形和) / `annotate.js`(注釈・お絵描き) / `gif-recorder.js` /
 `demo-kit.js`(デモ共通の見せ方と約束) / `demos-{mechanics,thermal,waves,em,atomic}.js`(分野ごとの実装) /
 `demos-em-micro.js`(電磁気の**仕組みを粒で見せるモデル**。オームの法則モデルの輪を一般化した `microLoop` など。`demos-em.js` より後に読み込む) /
-`demos.js`(**目録 DEMO_CATALOG だけ。分野のファイルより後に読み込む**)
+`demos.js`(**目録 DEMO_CATALOG だけ。分野のファイルより後に読み込む**) /
+`share.js`(シーンの共有。**`google.script.run` があるとき＝webapp.gs が配信する結合版でだけメニューに出る**。サーバ側は `webapp.gs` の `share*`。**「デモ」シートの G 列（公開）に先生がチェックした行だけが一覧に出る**（先生＝「教員」シートかデプロイした本人には未公開も出る。生徒の共有は 1 時間 5 件まで）。他人のシーンは `_shareSanitize` を通してから開く)
 
 ### `js/ui/` — パネルとウィンドウ
 `panel-props.js`(物体のプロパティ) / `panel-element.js`(1,065行。レーザー・波源・ばね・場・地面など
 要素系すべて) / `panel-joint.js` / `panel-gas.js` / `panel-particle.js` / `panel-world.js`(全体設定タブ) /
-`velgraph.js`(**1窓=1物体**) / `energygraph.js`(**1窓=1系**) / `circuitgraph.js`(**1窓=1回路**) /
+`velgraph.js`(**1窓=1物体**。変位・速度・加速度・受けた力) / `energygraph.js`(**1窓=1系**) / `circuitgraph.js`(**1窓=1回路**) /
 `tempgraph.js` / `pvgraph.js` / `menubar.js` / `context-menu.js` / `tool-menus.js`(左ツールバーの設定窓) /
 `sim-popover.js` / `slider.js` / `dialog.js`(`confirm`/`alert` の置き換え) / `color-picker.js` / `help-popup.js`
 
@@ -203,6 +205,9 @@ SPH（位置ベースの密度緩和）と分子運動論（速度ベースの�
   (μs+μk)/2·N になる（実測：箱は 8.5N で滑り出した。同条件の円＝接触1点は 9.81N ＝理論どおり）。
 - 反発は反復の外で `vn0` だけを種に最後にまとめて与える（力学的エネルギーを増やさないため）。
 - ジョイントの型名（`spring`/`rope`/`rod`/`hinge`/`axle`/`fixjoint`）はシーン保存形式なので**変えない**。
+- **シーンから来た文字（物体名・型名・注釈・id など）を HTML に入れるときは必ず `escHtml` か `textContent` を通す。**
+  シーンは共有で他人が書いたものも開く（`js/app/share.js`）。`onclick="…"` の文字列にシーンの値を埋めない（番号で引く）。
+  読み込みは必ず `applySceneData` を通す（`sanitizeSceneData`：id は数だけ・`__proto__` を捨てる）。
 - 衝突レイヤーはマスク方式で**推移的ではない**（A∩B≠∅ かつ B∩C≠∅ でも A∩C=∅ はありうる）。
 
 ---

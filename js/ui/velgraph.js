@@ -31,6 +31,12 @@ const VG_QUANTS = [
     keys:{ x:'vx', y:'vy', mag:'speed' }, comp:{ x:'vx', y:'vy', mag:'速さ' } },
   { id:'acc', flag:'showAcc', label:'加速度', unit:'m/s²',
     keys:{ x:'ax', y:'ay', mag:'amag'  }, comp:{ x:'ax', y:'ay', mag:'|a|'  } },
+  // ★接触（床・ほかの物体）から受けた力の合力。重力は含まない。1 tick（1/60秒）の平均で、
+  //   加速度と違って均さない（数値微分ではなく、ソルバが打った力積そのものなので暴れない）。
+  //   衝突の山の「高さと幅」が読みどころなので、縦軸もスパイクを枠外へ出さない。
+  //   ★剛体どうしの衝突は 1 tick で終わるので、その山の高さは Δp×60 で決まる（fracture.js の★）
+  { id:'frc', flag:'showFrc', label:'受けた力', unit:'N',
+    keys:{ x:'fx', y:'fy', mag:'fmag'  }, comp:{ x:'Fx', y:'Fy', mag:'|F|'  } },
 ];
 const VG_MAX_SAMPLES  = 20000;   // 安全上限（60fps で約5.5分ぶん）
 const VG_START_TOL    = 0.9;     // [m/s²] 記録開始トリガー（重力の約1割）
@@ -48,12 +54,16 @@ function velGraphBody(g) {
 }
 function velGraphName(g) {
   const b = velGraphBody(g);
+  if (!b && g.brokenName) return g.brokenName + '（割れた）';
   return b ? (b.label || ('Object ' + b.id)) : ('Object ' + g.bodyId);
 }
 // 対象が消えたウィンドウを閉じる。物体が無くなれば記録の続きは取れないので残さない
 // （Undo で物体が戻ってもウィンドウは戻らない。もう一度「グラフを表示」を押す）
+//   ★割れた物体（js/physics/fracture.js）の窓だけは畳まずに残す。割れる瞬間の力こそが
+//     見たい記録で、畳むとその山ごと消える。記録は止めたまま（破片は別の物体なので続きは取らない）。
+//     リセット・元に戻すで物体が戻れば、同じ id なのでそのまま続きから使える。
 function velGraphPrune() {
-  for (const g of velGraphs.slice()) if (!velGraphBody(g)) velGraphClose(g);
+  for (const g of velGraphs.slice()) if (!g.broken && !velGraphBody(g)) velGraphClose(g);
 }
 
 // ── ウィンドウの生成と破棄 ─────────────────────────────
@@ -64,6 +74,7 @@ function velGraphNew(body, opts) {
     t: 0,                  // 記録開始からのシミュ時間[s]
     samples: [],           // {t, x,y,r, vx,vy,speed, ax,ay,amag}
     showPos: true, showVel: true, showAcc: true,   // 表示する段（変位・速度・加速度）
+    showFrc: false,        // ★受けた力の段（既定は出さない＝既存の窓・デモの見た目を変えない）
     showX: true, showY: true, showMag: true,       // 段の中で表示する成分
     // 変位の基準。false＝記録を始めた位置（既定）／true＝座標原点。成分ごとに独立
     posOriginX: false, posOriginY: false, posOriginMag: false,
@@ -118,6 +129,8 @@ function velGraphBuildPanel(g) {
       '<label class="vg-check"><input type="checkbox" class="vg-vel">速度 [m/s]</label>' +
       '<label class="vg-check" title="速度の数値微分です。ノイズを抑えるため数フレームの移動平均をかけています">' +
         '<input type="checkbox" class="vg-acc">加速度 [m/s²]</label>' +
+      '<label class="vg-check" title="床やほかの物体との接触から受けた力（垂直抗力と摩擦の合力）です。重力は含みません。&#10;1/60秒ごとの平均の力で、加速度のような均しはかけていません">' +
+        '<input type="checkbox" class="vg-frc">受けた力 [N]</label>' +
     '</div>' +
     '<div class="vg-controls">' +
       '<span class="vg-grp" title="どの段でも同じ色で描かれるので、段をまたいで縦に目で追えます">成分</span>' +
@@ -141,7 +154,7 @@ function velGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel    = panel;
   g.canvas   = panel.querySelector('canvas');
-  g.ctx      = g.canvas.getContext('2d');
+  g.ctx      = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl  = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.startBtn = panel.querySelector('.vg-start');
@@ -150,7 +163,7 @@ function velGraphBuildPanel(g) {
   g.titleEl.textContent = 'グラフ ' + g.id;
   panel.querySelector('.vg-close').addEventListener('click', () => velGraphClose(g));
   // チェックの初期状態はインスタンスの値から入れる（markup と二重に持つとずれるため）
-  for (const [cls, key] of [['.vg-pos','showPos'], ['.vg-vel','showVel'], ['.vg-acc','showAcc'],
+  for (const [cls, key] of [['.vg-pos','showPos'], ['.vg-vel','showVel'], ['.vg-acc','showAcc'], ['.vg-frc','showFrc'],
                             ['.vg-x','showX'], ['.vg-y','showY'], ['.vg-mag','showMag'],
                             ['.vg-ox','posOriginX'], ['.vg-oy','posOriginY'], ['.vg-omag','posOriginMag']]) {
     const cb = panel.querySelector(cls);
@@ -353,7 +366,11 @@ function vgRowKeys(g, q) {
 function resetKeepsStopped(g) { return g.stopReason === 'user'; }
 function resetVelGraphOne(g) {
   const stay = resetKeepsStopped(g);
-  g.t = 0; g.samples = []; g.frozen = stay; g.stopReason = stay ? 'user' : null;
+  // ★割れた物体の窓（velGraphPrune の★）：リセット・元に戻すで物体が戻っていれば普通の窓に戻す。
+  //   戻っていなければ、記録を捨てても止めたまま（続きを取る相手がいない）
+  g.broken = !!g.broken && !velGraphBody(g);
+  g.t = 0; g.samples = []; g.frozen = stay || g.broken;
+  g.stopReason = stay ? 'user' : g.broken ? 'broken' : null;
   g.started = !!g.autoStart;            // ★加速度が生じるまで記録を始めない（autoStart のときだけ即開始）
   g._x0 = null; g._vPrev = null; g._accScan = null;   // 縦軸の走査（添字）も捨てる
   updateVelGraphStatus(g);
@@ -394,6 +411,7 @@ function updateVelGraphStatus(g) {
   const el = g.statusEl;
   if (!el) return;
   if (g.stopReason === 'limit')   { el.textContent = '記録停止（上限）'; el.style.color = 'var(--accent3)'; }
+  else if (g.stopReason === 'broken') { el.textContent = '割れたので記録停止'; el.style.color = 'var(--accent3)'; }
   else if (g.frozen)              { el.textContent = '記録停止'; el.style.color = 'var(--accent3)'; }
   else if (running && !g.started) { el.textContent = '加速度が生じるまで待機'; el.style.color = 'var(--text2)'; }
   else if (running)               { el.textContent = '記録中'; el.style.color = '#66bb6a'; }
@@ -476,10 +494,12 @@ function sampleVelGraphOne(g, dt) {
   // ★座標原点から測った位置も一緒に控える。どちらで描くかは成分ごとの選択（冒頭の★）で、
   //   描くときに選ぶ。片方だけ記録すると、途中で切り替えたときにその時刻で線が飛ぶ
   const xa = b.x * PX2M, ya = yUI(b.y * PX2M);
+  const { fx, fy } = contactForceN(b);            // ★受けた力（fracture.js。この tick に積んだ値）
   g.t += dt;
   g.samples.push({ t: g.t, x, y, r: Math.hypot(x, y),
                    xa, ya, ra: Math.hypot(xa, ya),
-                   vx, vy, speed, ax, ay, amag: Math.hypot(ax, ay) });
+                   vx, vy, speed, ax, ay, amag: Math.hypot(ax, ay),
+                   fx, fy, fmag: Math.hypot(fx, fy) });
   vgFillAcc(g.samples, dt);
   g._vPrev = { vx, vy };
   // 記録の終了はユーザーの停止ボタン頼み。安全上限に達したときだけ自動で止める
@@ -590,7 +610,7 @@ function drawVelGraphOne(g) {
   c.textAlign = 'right'; c.fillText(tMax.toFixed(1)+'s', padL+plotW, last.top+rowH+13);
   if (g.frozen && g.samples.length) {
     c.fillStyle = 'rgba(165,214,167,0.9)'; c.textAlign = 'right';
-    c.fillText(g.stopReason === 'limit' ? '記録停止（上限）' : '記録停止', padL+plotW-2, padT+10);
+    c.fillText(g.stopReason === 'limit' ? '記録停止（上限）' : g.stopReason === 'broken' ? '割れた' : '記録停止', padL+plotW-2, padT+10);
   }
   c.textAlign = 'left';
   // ── カーソル読み取り：全段を貫く1本の縦線で、同じ時刻の値をまとめて読む ──

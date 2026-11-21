@@ -49,6 +49,10 @@ function applyBodyProp(b, prop, val) {
       b.temp = Number.isFinite(t) ? Math.max(0, t) : ROOM_K;   // 絶対零度より下は作れない
     } else if (prop === 'label') {
       b.label = String(val == null ? '' : val).trim();          // ★数字だけの名前も文字のまま持つ
+    } else if (prop === 'breakForce') {
+      b.breakForce = Math.max(0.1, parseFloat(val) || 0.1);   // ★0 にすると置いただけで割れる
+    } else if (prop === 'breakable') {
+      b.breakable = !!val;
     } else if (prop === 'heatCap' || prop === 'conduct') {
       b[prop] = Math.max(0, parseFloat(val) || 0);             // 0＝熱をやりとりしない
     } else {
@@ -81,6 +85,10 @@ function updateProp(prop, val, skipUndo) {
       document.getElementById('p-static').checked   = first.isStatic;
       document.getElementById('p-constvel').checked = first.constVel;
     }
+  }
+  if (prop === 'breakable') {   // ★割れる力の欄は「割れる」のときだけ出す
+    const first = objects.find(o => selectedIds.has(o.id));
+    if (first) document.getElementById('p-breakforce-row').style.display = first.breakable ? '' : 'none';
   }
   if (prop === 'mass') {
     const first = objects.find(o => selectedIds.has(o.id));
@@ -263,9 +271,13 @@ function updateColor(type, val) {
   }
   // ★drawProps へは伝播させない（選択中の物体だけを変える。新規物体は既定色のまま）
 }
+// 配色のプリセット（theme.js）を選んだあと、全体設定タブの欄を合わせ直す
+function syncThemeUI() {
+  const sel = document.getElementById('w-theme');
+  if (sel) sel.value = uiTheme;
+}
 function worldUpdate(prop, val) {
   world[prop]=typeof val==='string'?(val==='true'?true:val==='false'?false:(isNaN(val)?val:parseFloat(val))):val;
-  if (prop==='bgColor') { document.getElementById('bg-swatch').style.background=val; }
 }
 // まわりの温度。★欄は℃、world.ambientTemp は K で持つ（units.js の流儀。UI 境界で換算する）
 function updateAmbientTemp(val) {
@@ -374,8 +386,7 @@ function syncWorldPanel() {
   syncGroundCoefUI();          // 地面の反発係数・静止摩擦係数・動摩擦係数（プロパティ側と共通）
   const gsw = document.getElementById('ground-swatch');
   if (gsw) gsw.style.background = ground.fillColor;
-  const bsw = document.getElementById('bg-swatch');
-  if (bsw) bsw.style.background = world.bgColor;
+  syncThemeUI();
   syncBgFrictionUI();          // 背景（テーブル面）の摩擦係数と g⊥
   syncWallUI();                // 壁
   syncEMWorldUI();             // 電磁気

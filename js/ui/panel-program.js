@@ -17,7 +17,7 @@ function buildProgramPanel(p) {
   panel.style.width = '212px';
   panel.innerHTML =
     '<div class="vg-header">' +
-      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">プログラム ' + p.id + '</span>' +
+      '<span class="vg-title" style="flex:0 0 auto;white-space:nowrap">プログラム ' + escHtml(p.id) + '</span>' +
       '<span class="vg-status pg-sum" style="flex:1 1 auto;min-width:0;white-space:nowrap;' +
         'overflow:hidden;text-overflow:ellipsis"></span>' +
       // ★「キーを押した瞬間」のときだけ出す実行ボタン。見出しに置くので畳んでも押せる

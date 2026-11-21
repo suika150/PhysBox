@@ -89,6 +89,11 @@ function toggleSceneMenu(e) {
   sep();
   addItem('シーンを保存　(Ctrl+S)', () => { closeMenu(); saveScene(); });   // ★キーは前からあるが未表示だった
   addItem('シーンを読み込み', () => { closeMenu(); loadScene(); });
+  // ★共有は学校の Web アプリ版（結合版）でだけ出す。file:// にはサーバが無い（js/app/share.js）
+  if (shareAvailable()) {
+    addItem('シーンを共有…',            () => { closeMenu(); shareScene(); });
+    addItem('共有されたシーンを開く…', () => { closeMenu(); openSharedBrowser(); });
+  }
   sep();
   addItem('スクリーンショットを保存', () => { closeMenu(); screenshot(); });
   addItem('GIFアニメを保存',        () => { closeMenu(); startGifMode(); });
@@ -523,6 +528,10 @@ function viewMenuDefs() {
         title:'グリッド線の間隔。スナップの刻みも同じ値になります。太線は5本ごとです。',
         get:() => world.gridSize * PX2M, set:v => setGridSize(v), fmt:v => v.toFixed(1) },
     ]},
+    { label:'配色', title:'背景・方眼・文字の色の組み合わせ。全体設定タブの「配色」と同じ設定です。\n'
+          + 'この端末に覚えられ、シーンには保存されません。',
+      sub: Object.keys(THEMES).map(k => ({ label: THEMES[k].label, on:() => uiTheme === k,
+        act:() => setUiTheme(k) })) },
     // ★グリッド線の下位メニューには入れず、独立した項目にする。中に入れると
     //   「グリッド線を表示」のON/OFFに従属しているように見えてしまうため。
     { label:'重力に垂直な線（見かけの水平）', on:() => world.showGravityLine,
@@ -888,7 +897,7 @@ function toggleSimMenu(e) {
     { text:'全物体を静止', act: stopAllMotion, enabled: () => objects.length > 0 },
     { text:'すべての摩擦を0にする', act: zeroAllFriction, enabled: () => objects.length > 0 },
     { text:'すべての軌跡を消去', act: clearAllTraces, enabled: () => objects.some(b => b.tracePoints.length > 0) },
-    { text:'水分子をすべて消去',   act: () => clearParticlesOfType('fluid'),
+    { text:'液体の粒子をすべて消去', act: () => clearParticlesOfType('fluid'),
       enabled: () => hasParticlesOfType('fluid') },
     { text:'気体分子をすべて消去', act: () => clearParticlesOfType('gas'),
       enabled: () => hasParticlesOfType('gas') },

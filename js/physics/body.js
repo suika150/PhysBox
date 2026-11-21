@@ -52,6 +52,36 @@ function removeThruster(b, th) {
 }
 class Body {
   constructor(opts) {
+    // ★シミュレーションが後から書き込むフィールドを、最初に undefined として並べておく。
+    //   以前は simTick・熱・破壊・分子・背景摩擦がそれぞれ最初に使うときに足していたので、
+    //   物体は tick 0・8・11… と足されるたびに V8 の隠れクラスを乗り換え、固定物体は
+    //   _bgHold を持たないぶん別の並びになっていた。ソルバの関数は乗り換え途中の形まで
+    //   覚えるので、5 通りを超えたところで A.vx のような読み込みが megamorphic（形を
+    //   引き当てる遅い経路）に落ちたままになる（2026-11-18 実測：箱 150 個の山で
+    //   _contactApplyN が 1 回 490 ns。同じ本文の関数を新しく作ると 48 ns）。
+    //   値はどれも「無いとき undefined」として読まれているので意味は変わらない
+    //   （`=== undefined` で見ているもの：_prevX・_gx・_cfSum・_cfPx など）。保存は
+    //   toJSON → JSON.stringify で undefined が落ちるので、書き出すシーンも変わらない。
+    //   全デモ 300tick の状態ハッシュは書き換え前と1ビットも違わない。
+    //   ★物体に1 tick 限りの作業用フィールドを足すときは、ここにも足すこと（足し忘れても
+    //     正しく動くが、また遅くなる）。
+    this._prevX = undefined; this._prevY = undefined; this._prevA = undefined;
+    this._cfx = undefined; this._cfy = undefined; this._cfSum = undefined; this._cfPeak = undefined;
+    this._cfPx = undefined; this._cfPy = undefined;
+    this._vx0 = undefined; this._vy0 = undefined; this._av0 = undefined; this._v0Id = undefined;
+    this._gHx = undefined; this._gHy = undefined;
+    this._solveSnap = false; this._svx = 0; this._svy = 0; this._sav = 0;   // ★step.js の advanceBySolvedVelocity
+    this._softJointed = false; this._posDone = false;
+    this._integ = false; this._iv0x = 0; this._iv0y = 0; this._iav0 = 0;
+    this._iadx = 0; this._iady = 0; this._iada = 0; this._ivex = 0; this._ivey = 0; this._iave = 0;
+    this._bgHold = undefined; this._bgDvx = undefined; this._bgDvy = undefined;
+    this._bgV0x = undefined; this._bgV0y = undefined;
+    this._gx = undefined; this._gy = undefined; this._ga = undefined;
+    this._hnS = undefined; this._hnI = undefined;
+    this._wpbb = undefined; this._wpbbX = undefined; this._wpbbY = undefined; this._wpbbA = undefined;
+    this._hT = undefined; this._hTsrc = undefined;   // ★最小の半厚み（step.js の bodyHalfThickness）
+    this._mol = undefined; this._molP = undefined; this._molPf = undefined; this._molF = undefined;
+    this._cpl = undefined; this._flowU = undefined;
     this.id = opts.id !== undefined ? opts.id : ++uidCounter;
     if (opts.id !== undefined && opts.id > uidCounter) uidCounter = opts.id;
     this.type = opts.type || 'box';
@@ -71,6 +101,10 @@ class Body {
     this.frictionStatic = opts.frictionStatic !== undefined
       ? Math.max(opts.frictionStatic, this.friction) : this.friction;
     this.drag = opts.drag !== undefined ? opts.drag : 0;
+    // ★割れる（js/physics/fracture.js）。既定は割れない。breakForce は「接触から受けた力」
+    //   （1 tick＝1/60秒の平均）がこれ以上になったら割れる、というしきい値 [N]。
+    this.breakable  = !!opts.breakable;
+    this.breakForce = opts.breakForce !== undefined ? opts.breakForce : 50;
     // ★熱：温度は内部では絶対温度 K（UI では ℃）。熱容量 C = heatCap × mass。
     //   heatCap か conduct が0の物体は熱のやりとりから外れる＝完全な断熱材。
     this.temp    = opts.temp    !== undefined ? opts.temp    : ROOM_K;   // [K]
@@ -349,7 +383,7 @@ class Body {
     }
     return this.verts || [];
   }
-  _invalidateShape() { this._lv = null; this._wv = null; this._wp = null; this._wh = null; this._wpbb = null; }  // 形状を作り直したら呼ぶ
+  _invalidateShape() { this._lv = null; this._wv = null; this._wp = null; this._wh = null; this._wpbb = null; this._hTsrc = undefined; }  // 形状を作り直したら呼ぶ
   _ensureWorldCache() {
     if (this._wv && this._wvX === this.x && this._wvY === this.y && this._wvA === this.angle) return;
     const lv = this._localOutline();
@@ -508,6 +542,7 @@ class Body {
   }
 integrate(dt) {
     this._gHx = 0; this._gHy = 0;   // ★位置の更新で引いた重力の半分（接触の接線ずれの補正が使う）
+    this._integ = false;          // ★下の一本道（ふつうの物体）を通ったときだけ true（末尾の★）
     if (this.isSpawner) return;   // ★生成口は動かない。速度は「出てくる物体に渡す値」として持つだけ
     // ★リモコンの〈手で動かす〉で押されている間は、固定してあっても進める（_remoteDrive）。
     //   新しい運動を足すのではなく、下の「等速で駆動されている」一本道へ入れるだけ。
@@ -625,6 +660,12 @@ integrate(dt) {
     if (this.fixedRotation) this.av = 0;
     this.angle += this.av * dt;
     this._updateAABB();
+    // ★位置を進め直す（step.js の advanceBySolvedVelocity）ための控え：区間の始めの速度と、
+    //   位置を実際に進めた速度、この関数を出るときの速度
+    this._integ = true;
+    this._iv0x = _v0x; this._iv0y = _v0y; this._iav0 = _av0;
+    this._iadx = this.vx - gHx; this._iady = this.vy - gHy; this._iada = this.av;
+    this._ivex = this.vx; this._ivey = this.vy; this._iave = this.av;
     // ★軌跡はここでは記録しない（サブステップごとに1点貯まってしまう）。
     //   tick に一度、step.js がすべての物体をまとめて記録する。理由はその★を参照。
   }
@@ -751,6 +792,7 @@ integrate(dt) {
     delete o.frozen;
     delete o._gx; delete o._gy; delete o._ga;
     delete o._prevX; delete o._prevY; delete o._prevA;
+    delete o._cfx; delete o._cfy; delete o._cfSum; delete o._cfPeak; delete o._cfPx; delete o._cfPy;   // ★接触の力（1 tick 限り。fracture.js）
     delete o._flowU;               // ★流れの場が履かせている速度の下駄（読み込み後に組み直す）
     delete o._bgHold; delete o._bgDvx; delete o._bgDvy;   // ★背景摩擦の判定持ち越し（1サブステップ限り）
     delete o._bgV0x; delete o._bgV0y;

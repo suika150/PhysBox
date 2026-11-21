@@ -161,7 +161,7 @@ function eneGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel    = panel;
   g.canvas   = panel.querySelector('canvas');
-  g.ctx      = g.canvas.getContext('2d');
+  g.ctx      = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl  = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.recBtn   = panel.querySelector('.eg-rec');

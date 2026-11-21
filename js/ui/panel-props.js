@@ -32,6 +32,9 @@ function updatePropsPanel(b) {
   document.getElementById('p-friction').value=b.friction;
   document.getElementById('p-friction-s').value=b.frictionStatic;
   document.getElementById('p-drag').value=b.drag;
+  document.getElementById('p-breakable').checked = !!b.breakable;
+  document.getElementById('p-breakforce').value = b.breakForce;
+  document.getElementById('p-breakforce-row').style.display = b.breakable ? '' : 'none';   // ★割れないなら しきい値は触って意味がない
   // ★熱。世界の熱スイッチがOFFなら丸ごと隠す（_hideEmptyPropGroups が見出しごと消す）
   const _thG = document.getElementById('p-thermal-group');
   for (const id of ['p-temp','p-heatcap','p-conduct','p-emissivity','p-heatcap-total'])

@@ -12,6 +12,46 @@
     --hover: #323849;
     --shadow: 0 4px 20px rgba(0,0,0,.5);
     --radius: 6px;
+    /* ★ここから下は配色のプリセット（js/core/theme.js）で白と入れ替わる色。
+       値を直に書かず変数にしてあるのは、黒と白で別の値を持たせるため */
+    --text-strong: #fff;          /* 強調の文字（ダイアログの本文など） */
+    --on-accent: #10141c;         /* アクセント色の上に載る文字 */
+    --accent-hover: #38b2e8;
+    --canvas-bg: #12141a;         /* キャンバスの置き場（描くまでの一瞬に見える地） */
+    --inset: rgba(0,0,0,.2);      /* 一段沈めた地（グラフの枠の中など） */
+    --glass-rgb: 26,28,35;        /* キャンバスの上に浮かぶ窓の地（不透明度は使う側） */
+    --panel-rgb: 34,37,47;
+    --warn: #ffa726;
+    --ok: #66bb6a;
+  }
+  /* ── 白の配色（js/core/theme.js の setUiTheme が <html data-theme="light"> にする）──
+     ★キャンバスの白（#FAFBF7）に対し、バー（上・左・右・下）ははっきり灰に沈めて境目を出す
+       （2026-10-27 ユーザーの指示。最初の #f4f6f3 はキャンバスと見分けがつかず、次の灰青 #dce2e7 は
+       水色が強すぎた。色味はほぼ無彩色にし、キャンバスのわずかな黄緑みに寄せてある。
+       その灰 #e0e2e0 は少し重かったので、境目が見える範囲で薄くして #e9eae8 にした）
+       アクセントは水色 300 番台（暗い地用）から 700 番台へ。白い地の上の文字・線として読める濃さ */
+  :root[data-theme="light"] {
+    --bg: #d9dbd9;
+    --panel: #e9eae8;
+    --panel2: #dddfdd;
+    --border: #c6cac8;
+    --accent: #0288d1;
+    --accent2: #d84315;
+    --accent3: #2e7d32;
+    --text: #1f2a35;
+    --text2: #3a4249;   /* ★メニュー・ツール名・項目名に使う。#585f66 は白い地で薄く見えた（2026-10-28） */
+    --tool-active: #0288d1;
+    --hover: #d8dbd9;
+    --shadow: 0 4px 18px rgba(30,45,60,.18);
+    --text-strong: #111821;
+    --on-accent: #fff;
+    --accent-hover: #0277bd;
+    --canvas-bg: #FAFBF7;
+    --inset: rgba(255,255,255,.75);   /* 白い地では「沈める」より、後ろの絵を隠して線をくっきりさせる */
+    --glass-rgb: 250,251,248;
+    --panel-rgb: 233,234,232;
+    --warn: #e65100;
+    --ok: #2e7d32;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; user-select: none; }
@@ -62,7 +102,7 @@
   #btn-pause:hover { background: #ffa726; }
   #btn-step  { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
   #btn-step:hover { background: var(--hover); }
-  /* ★チュートリアル（初心者マーク）。右端に寄せる（physBox.html の margin-left:auto）。
+  /* ★チュートリアル（初心者マーク）。右端に寄せる（index.html の margin-left:auto）。
      名前は他の記号ボタンより長く残す：初めて触る人が探す入口なので、記号だけだと見落とす。
      ★名前（132px）が入るのは、他の名前を畳んだ 1330〜1510px と、他も名前つきの 1660px 以上だけ。
        実測：他を畳むと右端 1162px＋132px、名前つきだと 1488px＋132px。どちらにも右のフェード 18px を足した境目。
@@ -82,8 +122,8 @@
   #btn-grid:hover, #btn-gridsize:hover, #btn-osnap:hover, #btn-follow:hover, #btn-strobe:hover, #btn-strobeset:hover { background: var(--hover); color: var(--text); }
   /* ★ストロボもここに入れる。入れ忘れていたころは、押しても見た目が変わらないうえ
      （対象の既定が「選択中の物体だけ」なので）残像も出ず、効かないボタンに見えた。 */
-  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { background: var(--accent); color: #10141c; border-color: var(--accent); }
-  #btn-grid.on:hover, #btn-osnap.on:hover, #btn-follow.on:hover, #btn-strobe.on:hover { background: #38b2e8; }
+  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  #btn-grid.on:hover, #btn-osnap.on:hover, #btn-follow.on:hover, #btn-strobe.on:hover { background: var(--accent-hover); }
   /* 2つのボタンを1つのコントロールに見せる（左＝ON/OFF、右＝間隔メニュー） */
   .btn-split { display: flex; gap: 0; flex-shrink: 0; }
   /* ★:not(:only-child)：カメラは窓の出る位置のために .btn-split に1つだけで入っている（HTML の注）。
@@ -95,7 +135,7 @@
      間隔を変えるたびにストロボのボタンが伸び縮みし、右隣のカメラが横へ動く。
      いちばん長い「0.02s」で 32px なので 34px 確保しておく。 */
   #btn-strobe-int { color: var(--accent); font-weight: 600; display: inline-block; width: 34px; text-align: left; }
-  #btn-strobe.on #btn-strobe-int { color: #10141c; }
+  #btn-strobe.on #btn-strobe-int { color: var(--on-accent); }
   /* ── スイッチのボタン（グリッドスナップ・物体スナップ・ストロボ・カメラ）──
      ★幅があるうちは記号のとなりに名前を出す。以前は名前を出さず title だけだったが、
        記号から機能を当てるのは初見では無理で、押して確かめるしかなかった。
@@ -106,7 +146,7 @@
        width ＝ 絵文字（🎥）はテキスト記号（⌖）よりグリフが広く、min-width だと
        34/34/36px と不揃いになる。 */
   .topbar-icon { padding: 4px 10px; text-align: center; }
-  /* ★記号は左ツールと同じ SVG スプライト（physBox.html 冒頭の ti-gridsnap・ti-play ほか）。以前は文字の記号
+  /* ★記号は左ツールと同じ SVG スプライト（index.html 冒頭の ti-gridsnap・ti-play ほか）。以前は文字の記号
      （⊞ ⊙ ◍ 🎥）で、絵文字とテキスト記号でフォントも大きさも揃わず、左ツールとも見た目がばらばらだった。
      16px：ボタンの行の高さ（line-height 15px＝ボタン高 25px）を変えない大きさ。-3px で文字の中心に揃う。
      ★ON のときは地が --accent（水色）なので、記号の色を --ic で暗色 1 色に倒す（色の中身は symbol 側の注）。 */
@@ -114,7 +154,7 @@
     display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
     fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
   }
-  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { --ic: #10141c; }
+  #btn-grid.on, #btn-osnap.on, #btn-follow.on, #btn-strobe.on { --ic: var(--on-accent); }
   /* ▾（設定メニューを開く側）は本文の文字より小さく見せる。以前の ▾ は font-size 11px で、
      同じ見かけにすると 12px。 */
   .btn-split > .sim-btn:last-child:not(:only-child) svg.ti { width: 12px; height: 12px; vertical-align: -1px; }
@@ -184,7 +224,7 @@
   /* ★nowrap：5文字（「スリンキー」）でラベル幅がボタン幅 40px とちょうど同値になる。
      フォントが少し違う環境では溢れて2行になり、ボタンの高さが崩れる。 */
   .tool-btn span.label { font-size: 8px; margin-top: 1px; line-height: 1; white-space: nowrap; }
-  /* ツールのアイコン（physBox.html 冒頭の SVG スプライト）。線の太さ・端の形はここで一括して決め、
+  /* ツールのアイコン（index.html 冒頭の SVG スプライト）。線の太さ・端の形はここで一括して決め、
      色は記号ごとに持つ（<symbol style="color:…">）。
      ★20px：絵文字(17px)は字面に余白があるので、同じ見かけの大きさにするとこのくらいになる。 */
   .tool-btn svg.ti, #measure-popup svg.ti {
@@ -194,7 +234,7 @@
   .tool-btn:hover { background: var(--hover); color: var(--text); }
   /* ★選択中は塗りつぶさず、薄い地＋水色の縁で示す。アイコンは色で見分けるので、
      水色で塗ると青・緑のアイコンが地に沈み、選んだ道具ほど色が読めなくなる。 */
-  .tool-btn.active { background: rgba(79,195,247,.22); box-shadow: inset 0 0 0 1.5px var(--tool-active); color: #fff; }
+  .tool-btn.active { background: rgba(79,195,247,.22); box-shadow: inset 0 0 0 1.5px var(--tool-active); color: var(--text-strong); }
   .tool-btn.active:hover { background: rgba(79,195,247,.32); }
   /* ボタン内の .tool-tip は文言の置き場。#toolbar は overflow でクリップするので、 */
   /* 実際の表示は body 直下の #tool-tip-pop（position:fixed）が受け持つ。       */
@@ -211,7 +251,7 @@
   }
   /* ── Canvas area ── */
   #canvas-wrap {
-    flex: 1; position: relative; overflow: hidden; background: #12141a;
+    flex: 1; position: relative; overflow: hidden; background: var(--canvas-bg);
     cursor: crosshair;
   }
   canvas { display: block; }
@@ -298,7 +338,7 @@
   .prop-select:focus { outline: none; border-color: var(--accent); }
   .wave-warn { font-size: 10px; line-height: 1.5; margin: -2px 0 6px 0; }
   .wave-info { font-size: 10px; color: var(--text2); line-height: 1.6; margin-top: 4px;
-    padding: 5px 6px; background: rgba(0,0,0,.2); border-radius: 4px; }
+    padding: 5px 6px; background: var(--inset); border-radius: 4px; }
   .wave-info b { color: var(--accent); font-weight: 600; }
   .color-swatch {
     width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; flex-shrink: 0;
@@ -407,7 +447,7 @@
   .ctx-item.sp-open { background: var(--hover); color: var(--accent); }
   /* ── Overlay Info ── */
   #overlay-info {
-    position: absolute; top: 10px; right: 10px; background: rgba(26,28,35,.85);
+    position: absolute; top: 10px; right: 10px; background: rgba(var(--glass-rgb),.85);
     border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px;
     font-size: 11px; color: var(--text2); pointer-events: none; backdrop-filter: blur(4px);
   }
@@ -416,7 +456,7 @@
      （位置は開いた順に少しずつずらして velgraph.js が inline で入れる） */
   .velgraph-panel {
   position: absolute; width: 320px;
-  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  background: rgba(var(--glass-rgb),.92); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
   box-shadow: var(--shadow); z-index: 50;
   display: flex; flex-direction: column;            /* ★縦並び：canvasを可変にする土台 */
@@ -487,7 +527,7 @@
   /* 回路グラフ：速度グラフと同じ見た目・操作にそろえる（横に広いので幅だけ変える） */
   .circgraph-panel {
   position: absolute; width: 460px;
-  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  background: rgba(var(--glass-rgb),.92); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
   box-shadow: var(--shadow); z-index: 50;
   display: flex; flex-direction: column;
@@ -496,12 +536,12 @@
   height: 420px;                                    /* ★段積み（1段1素子）が入る既定の高さ */
   max-width: 90vw; max-height: 90vh;
   }
-  .circgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
-  .circgraph-panel .cg-note { margin-top:4px; font-size:10px; color:#ffa726; line-height:1.35; }
+  .circgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:var(--inset); border-radius:4px; }
+  .circgraph-panel .cg-note { margin-top:4px; font-size:10px; color:var(--warn); line-height:1.35; }
   /* エネルギーのグラフ：1ウィンドウ＝1つの系。項の名前が長いので幅だけ広げる */
   .enegraph-panel {
   position: absolute; width: 420px;
-  background: rgba(26,28,35,.92); border: 1px solid var(--border);
+  background: rgba(var(--glass-rgb),.92); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 8px; backdrop-filter: blur(4px);
   box-shadow: var(--shadow); z-index: 50;
   display: flex; flex-direction: column;
@@ -510,8 +550,8 @@
   height: 450px;                                    /* ★1枚のグラフ＋操作3段（折り返しあり）＋説明2行 */
   max-width: 90vw; max-height: 90vh;
   }
-  .enegraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
-  .enegraph-panel .eg-note { margin-top:5px; font-size:10px; color:#ffa726; line-height:1.35; }
+  .enegraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:var(--inset); border-radius:4px; }
+  .enegraph-panel .eg-note { margin-top:5px; font-size:10px; color:var(--warn); line-height:1.35; }
   .enegraph-panel .eg-ref-note { margin-top:6px; font-size:10px; color:var(--text2); line-height:1.5; }
   .enegraph-panel .eg-ref-note b { color:var(--text); font-weight:600; }
   .enegraph-panel .eg-ref-show { margin-left:6px; cursor:pointer; text-decoration:underline; color:var(--accent); }
@@ -521,7 +561,7 @@
   .vg-status { font-size:10px; color:var(--text2); flex:1; }
   .vg-close { cursor:pointer; color:var(--text2); font-size:15px; line-height:1; }
   .vg-close:hover { color:var(--text); }
-  .velgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:rgba(0,0,0,.2); border-radius:4px; }
+  .velgraph-panel canvas { width:100%; flex:1 1 auto; min-height:150px; display:block; background:var(--inset); border-radius:4px; }
   .vg-hint { font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .vg-grp { font-size:10px; color:var(--text2); min-width:26px; }
   .btn-small:disabled { opacity:.45; cursor:default; }
@@ -583,7 +623,7 @@
   }
   #gif-hint {
     position:absolute; top:12px; left:50%; transform:translateX(-50%);
-    background:rgba(26,28,35,0.9); color:var(--text); border:1px solid var(--border);
+    background:rgba(var(--glass-rgb),0.9); color:var(--text); border:1px solid var(--border);
     padding:6px 14px; border-radius:6px; font-size:12px; pointer-events:none; white-space:nowrap;
   }
   #gif-countdown {
@@ -593,7 +633,7 @@
   }
   #gif-panel {
     position:absolute; left:50%; bottom:16px; transform:translateX(-50%); z-index:210;
-    background:rgba(26,28,35,0.94); border:1px solid var(--accent); border-radius:8px;
+    background:rgba(var(--glass-rgb),0.94); border:1px solid var(--accent); border-radius:8px;
     padding:8px 10px; display:flex; align-items:center; gap:8px; box-shadow:var(--shadow);
     /* ★1行に収める。
        absolute + left:50% だと、幅を書かない限り「収まる幅」は
@@ -622,11 +662,11 @@
   }
   #app-modal .am-box {
     width: min(430px, calc(100vw - 32px));
-    background: rgba(26,28,35,.94); border: 1px solid var(--accent); border-radius: 8px;
-    box-shadow: var(--shadow); padding: 16px 18px 14px; color: #fff;
+    background: rgba(var(--glass-rgb),.94); border: 1px solid var(--accent); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 16px 18px 14px; color: var(--text-strong);
   }
   #app-modal .am-title { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 9px; }
-  #app-modal .am-body  { font-size: 12px; line-height: 1.75; color: #fff; }
+  #app-modal .am-body  { font-size: 12px; line-height: 1.75; color: var(--text-strong); }
   #app-modal .am-body b { color: var(--accent); font-weight: 600; }
   /* 補足（元に戻せる範囲など）は本文より一段落とす */
   #app-modal .am-note {
@@ -640,8 +680,8 @@
   }
   #app-modal .am-btn:hover { background: var(--hover); }
   #app-modal .am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  #app-modal .am-btn.am-ok { background: var(--accent); border-color: var(--accent); color: #10222b; }
-  #app-modal .am-btn.am-ok:hover { background: #7fd4fa; }
+  #app-modal .am-btn.am-ok { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #app-modal .am-btn.am-ok:hover { background: var(--accent-hover); }
   #app-modal .am-btn.am-danger { background: #c62828; border-color: #c62828; color: #fff; }
   #app-modal .am-btn.am-danger:hover { background: #ef5350; }
   /* ── デモシーンの一覧窓（js/ui/demo-browser.js）──
@@ -650,7 +690,7 @@
      中央寄せだと分野を切り替えるたびに分野タブもデモのボタンも上下に跳ね、同じ場所を
      続けて押せない。実測（画面高 800px）：タブの上端が力学 146px／波動 229／
      電磁気学 244／熱力学 271 と 125px ずれていた。伸び縮みは下端だけで受ける。 */
-  #demo-browser {
+  :is(#demo-browser, #share-browser) {
     position: fixed; inset: 0; z-index: 20000;
     display: flex; align-items: flex-start; justify-content: center;
     background: rgba(0,0,0,.45);
@@ -661,58 +701,75 @@
      カードを小さくすれば減るが、128px より縮めると絵の中の装置が見分けにくくなる。
      高さの上限は置かない（画面いっぱいまで使う）。
      ★上端の余白 46px は動かさない。窓は上端で固定し、伸び縮みは下端だけで受ける（上の★）。 */
-  #demo-browser .db-box {
+  :is(#demo-browser, #share-browser) .db-box {
     margin-top: 46px;
     width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 92px);
     display: flex; flex-direction: column;
-    background: rgba(26,28,35,.96); border: 1px solid var(--accent); border-radius: 8px;
-    box-shadow: var(--shadow); padding: 11px 16px 10px; color: #fff;
+    background: rgba(var(--glass-rgb),.96); border: 1px solid var(--accent); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 11px 16px 10px; color: var(--text-strong);
   }
-  #demo-browser .db-head { display: flex; align-items: center; justify-content: space-between; }
-  #demo-browser .db-title { font-size: 13px; font-weight: 700; color: var(--accent); }
-  #demo-browser .db-close {
+  :is(#demo-browser, #share-browser) .db-head { display: flex; align-items: center; justify-content: space-between; }
+  :is(#demo-browser, #share-browser) .db-title { font-size: 13px; font-weight: 700; color: var(--accent); }
+  :is(#demo-browser, #share-browser) .db-close {
     background: none; border: none; color: var(--text2); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px;
   }
-  #demo-browser .db-close:hover { color: #fff; }
-  #demo-browser .db-tabs {
+  :is(#demo-browser, #share-browser) .db-close:hover { color: var(--text-strong); }
+  :is(#demo-browser, #share-browser) .db-tabs {
     display: flex; gap: 6px; margin: 8px 0 6px; padding-bottom: 6px;
     border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   /* ★単元（見出し＋カード）を横に流して詰める。単元ごとに改行すると 1〜3 件の単元の右が空く */
-  #demo-browser .db-body {
+  :is(#demo-browser, #share-browser) .db-body {
     overflow-y: auto; padding-right: 4px;
     display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 18px; row-gap: 4px;
   }
-  #demo-browser .db-group { max-width: 100%; }
+  :is(#demo-browser, #share-browser) .db-group { max-width: 100%; }
   /* 単元の見出し。カードの名前より一段強く、分野タブよりは弱く */
-  #demo-browser .db-unit {
+  :is(#demo-browser, #share-browser) .db-unit {
     font-size: 11px; font-weight: 700; color: var(--accent); margin: 7px 0 5px;
     border-left: 3px solid var(--accent); padding-left: 6px; white-space: nowrap;
   }
-  #demo-browser .db-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  :is(#demo-browser, #share-browser) .db-row { display: flex; flex-wrap: wrap; gap: 6px; }
   /* カード：サムネイル（240×150 を半分に）＋名前2行まで。
      ★幅を揃えるのは、文字の長さでボタン幅がばらばらだと目で追いにくかったため */
-  #demo-browser .db-card {
+  :is(#demo-browser, #share-browser) .db-card {
     width: 128px; padding: 0; text-align: left; cursor: pointer;
     background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
     color: var(--text); overflow: hidden; font: inherit;
   }
-  #demo-browser .db-card:hover { border-color: var(--accent); background: var(--hover); }
-  #demo-browser .db-card:disabled { opacity: .4; cursor: default; }
-  #demo-browser .db-card:disabled:hover { border-color: var(--border); background: var(--panel2); }
-  #demo-browser .db-pic { width: 128px; height: 80px; background: #111318; }
-  #demo-browser .db-pic img { display: block; width: 100%; height: 100%; }
-  #demo-browser .db-name {
+  :is(#demo-browser, #share-browser) .db-card:hover { border-color: var(--accent); background: var(--hover); }
+  :is(#demo-browser, #share-browser) .db-card:disabled { opacity: .4; cursor: default; }
+  :is(#demo-browser, #share-browser) .db-card:disabled:hover { border-color: var(--border); background: var(--panel2); }
+  :is(#demo-browser, #share-browser) .db-pic { width: 128px; height: 80px; background: #111318; }
+  :is(#demo-browser, #share-browser) .db-pic img { display: block; width: 100%; height: 100%; }
+  :is(#demo-browser, #share-browser) .db-name {
     font-size: 11px; line-height: 1.3; padding: 3px 5px 4px; height: calc(2 * 1.3em + 7px);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   /* ★下の帯は3行ぶんの高さで固定する。説明の長さで高さが変わると、窓の中身が上下に跳ねる */
-  #demo-browser .db-foot {
+  :is(#demo-browser, #share-browser) .db-foot {
     font-size: 11px; line-height: 1.4; color: var(--text2); border-top: 1px solid var(--border);
     margin-top: 8px; padding-top: 6px; flex-shrink: 0;
     height: calc(3 * 1.4em); overflow: hidden;
   }
-  #demo-browser .db-foot.db-foot-note { color: var(--text); }
+  :is(#demo-browser, #share-browser) .db-foot.db-foot-note { color: var(--text); }
+  /* 共有されたシーンの一覧窓（js/app/share.js）だけの部品。カードの下に作成者を1行足す */
+  #share-browser .db-card { display: flex; flex-direction: column; }
+  #share-browser .db-name { padding-bottom: 0; height: calc(2 * 1.3em + 3px); }
+  #share-browser .sb-by {
+    font-size: 10px; color: var(--text2); padding: 0 5px 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #share-browser .sb-filter { width: 100%; max-width: 360px; }
+  #share-browser .sb-only { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text2); white-space: nowrap; }
+  #share-browser .sb-only[hidden] { display: none; }
+  /* 未公開（先生にだけ見える）。★ふだんのカードと一目で分かるように枠を点線にして札を付ける */
+  #share-browser .db-card.sb-pending { border-style: dashed; border-color: #ffb74d; }
+  #share-browser .db-pic { position: relative; }
+  #share-browser .sb-tag {
+    position: absolute; left: 4px; top: 4px; padding: 1px 5px; border-radius: 3px;
+    background: #ffb74d; color: #1a1c23; font-size: 10px; font-weight: 700;
+  }
   /* Scrollbar */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -777,7 +834,7 @@
     #rp-open-btn {
       display: block; position: absolute; right: 10px; bottom: 10px; z-index: 5;
       padding: 9px 14px; border-radius: 20px; border: 1px solid var(--border);
-      background: rgba(34,37,47,.92); color: var(--text); font-size: 13px; cursor: pointer;
+      background: rgba(var(--panel-rgb),.92); color: var(--text); font-size: 13px; cursor: pointer;
       box-shadow: var(--shadow);
     }
     body.rp-open #rp-open-btn { display: none; }
@@ -797,3 +854,35 @@
     #statusbar { display: none; }
     .tool-btn { height: 34px; }
   }
+  /* ── 白の配色：パネルの中に直に書かれた文字色（警告の橙・状態の緑など）を濃い色へ ──
+     ★JS の innerHTML（style="color:#…"）と el.style.color（Chrome は rgb(…) で書く）の両方を拾う。
+       対応は js/core/theme.js の LIGHT_COLOR_MAP と同じ（キャンバスとパネルで同じ色が同じ色になる）。
+       この表は theme.js の表から作ったもの。色を足したら両方に足す */
+  :root[data-theme="light"] :is([style*="color:#ffa726" i], [style*="color: #ffa726" i], [style*="color: rgb(255, 167, 38)"]) { color: #e65100 !important; }
+  :root[data-theme="light"] :is([style*="color:#ffca28" i], [style*="color: #ffca28" i], [style*="color: rgb(255, 202, 40)"]) { color: #a06f00 !important; }
+  :root[data-theme="light"] :is([style*="color:#ffd54f" i], [style*="color: #ffd54f" i], [style*="color: rgb(255, 213, 79)"]) { color: #a87900 !important; }
+  :root[data-theme="light"] :is([style*="color:#ffb74d" i], [style*="color: #ffb74d" i], [style*="color: rgb(255, 183, 77)"]) { color: #e65100 !important; }
+  :root[data-theme="light"] :is([style*="color:#ff7043" i], [style*="color: #ff7043" i], [style*="color: rgb(255, 112, 67)"]) { color: #d84315 !important; }
+  :root[data-theme="light"] :is([style*="color:#66bb6a" i], [style*="color: #66bb6a" i], [style*="color: rgb(102, 187, 106)"]) { color: #2e7d32 !important; }
+  :root[data-theme="light"] :is([style*="color:#81c784" i], [style*="color: #81c784" i], [style*="color: rgb(129, 199, 132)"]) { color: #2e7d32 !important; }
+  :root[data-theme="light"] :is([style*="color:#a5d6a7" i], [style*="color: #a5d6a7" i], [style*="color: rgb(165, 214, 167)"]) { color: #388e3c !important; }
+  :root[data-theme="light"] :is([style*="color:#9ccc65" i], [style*="color: #9ccc65" i], [style*="color: rgb(156, 204, 101)"]) { color: #558b2f !important; }
+  :root[data-theme="light"] :is([style*="color:#ef5350" i], [style*="color: #ef5350" i], [style*="color: rgb(239, 83, 80)"]) { color: #c62828 !important; }
+  :root[data-theme="light"] :is([style*="color:#e57373" i], [style*="color: #e57373" i], [style*="color: rgb(229, 115, 115)"]) { color: #c62828 !important; }
+  :root[data-theme="light"] :is([style*="color:#4fc3f7" i], [style*="color: #4fc3f7" i], [style*="color: rgb(79, 195, 247)"]) { color: #0288d1 !important; }
+  :root[data-theme="light"] :is([style*="color:#29b6f6" i], [style*="color: #29b6f6" i], [style*="color: rgb(41, 182, 246)"]) { color: #0277bd !important; }
+  :root[data-theme="light"] :is([style*="color:#42a5f5" i], [style*="color: #42a5f5" i], [style*="color: rgb(66, 165, 245)"]) { color: #1976d2 !important; }
+  :root[data-theme="light"] :is([style*="color:#4dd0e1" i], [style*="color: #4dd0e1" i], [style*="color: rgb(77, 208, 225)"]) { color: #00838f !important; }
+  :root[data-theme="light"] :is([style*="color:#26c6da" i], [style*="color: #26c6da" i], [style*="color: rgb(38, 198, 218)"]) { color: #00838f !important; }
+  :root[data-theme="light"] :is([style*="color:#ce93d8" i], [style*="color: #ce93d8" i], [style*="color: rgb(206, 147, 216)"]) { color: #8e24aa !important; }
+  :root[data-theme="light"] :is([style*="color:#ab47bc" i], [style*="color: #ab47bc" i], [style*="color: rgb(171, 71, 188)"]) { color: #7b1fa2 !important; }
+  :root[data-theme="light"] :is([style*="color:#f06292" i], [style*="color: #f06292" i], [style*="color: rgb(240, 98, 146)"]) { color: #c2185b !important; }
+  :root[data-theme="light"] :is([style*="color:#b0bec5" i], [style*="color: #b0bec5" i], [style*="color: rgb(176, 190, 197)"]) { color: #607d8b !important; }
+  :root[data-theme="light"] :is([style*="color:#90a4ae" i], [style*="color: #90a4ae" i], [style*="color: rgb(144, 164, 174)"]) { color: #546e7a !important; }
+  :root[data-theme="light"] :is([style*="color:#eceff1" i], [style*="color: #eceff1" i], [style*="color: rgb(236, 239, 241)"]) { color: #78909c !important; }
+  /* ── 白の配色：左ツールバーのアイコンとツール名 ──
+     ★線を少し太く（1.7 → 2px）。白い地では細い線が飛びやすい（線の色・塗りの濃さは theme.js の
+       _applyIconShape）。ツール名は 8px → 9px・文字色を本文色に。最長5文字（プログラム）が
+       ボタン幅 40px に収まるよう字間を詰める（詰めないと 45px で左右にはみ出す） */
+  :root[data-theme="light"] .tool-btn svg.ti, :root[data-theme="light"] #measure-popup svg.ti { stroke-width: 2; }
+  :root[data-theme="light"] .tool-btn span.label { font-size: 9px; letter-spacing: -0.06em; color: var(--text); }

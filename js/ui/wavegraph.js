@@ -347,7 +347,7 @@ function waveGraphBuildPanel(g) {
     '<div class="vg-controls">' +
       '<span class="vg-grp" title="グラフに出す時間の幅です。いちばん左まで回すと、ためた全部を出します（長く走らせると波形が潰れます）">掃引</span>' +
       '<input type="range" class="wg-sweep" min="0" max="' + WG_SWEEP_MAX + '" step="1"' +
-        ' value="' + g.sweep + '" style="width:92px">' +
+        ' value="' + Number(g.sweep) + '" style="width:92px">' +
       '<span class="vg-hint wg-sweep-val"></span>' +
     '</div>' +
     '<div class="vg-controls">' +
@@ -361,7 +361,7 @@ function waveGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel = panel;
   g.canvas = panel.querySelector('canvas');
-  g.ctx = g.canvas.getContext('2d');
+  g.ctx = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.recBtn = panel.querySelector('.wg-rec');

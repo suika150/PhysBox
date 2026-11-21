@@ -492,7 +492,7 @@ canvas.addEventListener('mousedown', e => {
   // ★preventDefault はフォーカスの移動も止める。Web アプリ（Apps Script）は iframe の中で動くので、
   //   キャンバスをクリックしても iframe にフォーカスが入らず、Space・Z・Esc・リモコンのキーが
   //   一切届かなかった（ボタンを一度押すまで）。自分で窓にフォーカスを取る。
-  //   physBox.html を直接開いたときは元々フォーカスを持っているので何も変わらない。
+  //   index.html を直接開いたときは元々フォーカスを持っているので何も変わらない。
   window.focus();
   if (colorPickerOpen) {               // ★ピッカー表示中：左クリックは設置せず、ピッカーを閉じるだけ
     closeColorPicker();

@@ -857,7 +857,7 @@ function drawDirHandle(el, sp) {
   const active = !!(elementRotate && elementRotate.el === el);
   ctx.save();
   ctx.setLineDash([]);
-  drawArrow(ctx, sp.x, sp.y, sh.x, sh.y, 'rgba(0,0,0,0.55)', 4);
+  drawArrow(ctx, sp.x, sp.y, sh.x, sh.y, cHalo(0.55), 4);
   drawArrow(ctx, sp.x, sp.y, sh.x, sh.y, active ? '#ffd54f' : '#4fc3f7', 1.5);
   ctx.beginPath(); ctx.arc(sh.x, sh.y, 6, 0, Math.PI*2);
   ctx.fillStyle = active ? '#ffd54f' : '#4fc3f7';

@@ -172,7 +172,7 @@ function drawGasLinks() {
     //     玉が管の外に出るので、どちらを向いているかが一目で分かる。
     const hx = open ? tx : nx, hy = open ? ty : ny;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';               // 下敷き（管の上でも輪郭が立つ）
+    ctx.strokeStyle = cHalo(0.55);               // 下敷き（管の上でも輪郭が立つ）
     ctx.lineWidth = Math.max(6, 10 * cam.zoom);
     ctx.beginPath();
     ctx.moveTo(mx - hx*r, my - hy*r); ctx.lineTo(mx + hx*r, my + hy*r); ctx.stroke();
@@ -181,7 +181,7 @@ function drawGasLinks() {
     ctx.beginPath();
     ctx.moveTo(mx - hx*r, my - hy*r); ctx.lineTo(mx + hx*r, my + hy*r); ctx.stroke();
     ctx.fillStyle = open ? '#81c784' : '#ef5350';
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeStyle = cHalo(0.55);
     ctx.lineWidth = Math.max(1, 2 * cam.zoom);
     ctx.beginPath(); ctx.arc(mx + hx*r, my + hy*r, Math.max(6, 9 * cam.zoom), 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
@@ -371,7 +371,7 @@ function _gasReadout(ch, cs) {
   ctx.fillStyle = ch.broken ? '#ffab91' : '#b2ebf2';
   ctx.fillText(txt, mx, my);
   if (ch.label) {
-    ctx.fillStyle = 'rgba(178,235,242,0.7)';
+    ctx.fillStyle = isLightCanvas() ? 'rgba(0,131,143,0.85)' : 'rgba(178,235,242,0.7)';
     ctx.fillText(ch.label, mx, my - 26);
   }
   ctx.restore();

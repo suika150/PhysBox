@@ -21,7 +21,7 @@ function drawCharges() {
     ctx.font = 'bold ' + chargeSymbolSize(b).toFixed(1) + 'px sans-serif';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle = b.charge>0 ? '#ef5350' : '#42a5f5';
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth=3;
+    ctx.strokeStyle = cHalo(0.6); ctx.lineWidth=3;
     const sym = b.charge>0 ? '+' : '−';
     ctx.strokeText(sym, s.x, s.y); ctx.fillText(sym, s.x, s.y);
     ctx.restore();
@@ -29,6 +29,17 @@ function drawCharges() {
 }
 
 const CIRCUIT_COLOR = '#ffca28';
+// 白の配色での回路の色（導線・素子の線・電流の点）。
+//   ★#ffca28 を LIGHT_COLOR_MAP に任せると #a06f00 の濁った黄土色になる（ユーザーの指摘 2026-10-30）。
+//     表の側を変えると #ffca28 を使う他のもの（電気力の矢印・E 場の領域など）まで変わるので、
+//     回路だけここで色を決める。どちらも背景とのコントラストが足りていて読み替えを素通りする。
+//   ★導線は濁りのない琥珀（Tailwind amber-600）。電流の点は線より濃い褐色にする：暗い配色の
+//     「線より明るい点＋光彩」は白い地では光彩が消え、明るい点（#f59e0b・#fcd34d）は線に溶けて
+//     見えなかった（拡大して見比べた）。白い点は読み替えで濃い灰になる。
+const CIRCUIT_LIGHT = { wire: '#d97706', flow: '#92400e' };
+// 描画先が g のときの回路の色。★メインキャンバスで白の配色のときだけ差し替える
+//   （ツールメニューのアイコンは暗い地に描くので元の色のまま）
+function circuitColor(g) { return (g === ctx && isLightCanvas()) ? CIRCUIT_LIGHT.wire : CIRCUIT_COLOR; }
 function drawCircuit() {
   followSlideWireTerminals();   // ★停止中に素子を動かしても、接点の端子につないだ導線がついてくる
   ctx.save();
@@ -94,7 +105,7 @@ function drawConductorRods() {
         { x: mx + (q.x-mx)/s, y: my + (q.y-my)/s }, ctx, true);
       ctx.restore();
     } else {                                     // 静止中・画面上で短いときは線だけ
-      ctx.strokeStyle = CIRCUIT_COLOR; ctx.lineWidth = 3;
+      ctx.strokeStyle = circuitColor(ctx); ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     // 起電力の大きさ。向きは記号が示すので絶対値で出す（符号を併記すると二重になる）
@@ -395,7 +406,7 @@ function drawCircuitFlow() {
   ctx.setLineDash([]);
   ctx.shadowColor = 'rgba(255,238,88,0.9)';
   ctx.shadowBlur = 6;
-  ctx.fillStyle = '#ffee58';
+  ctx.fillStyle = isLightCanvas() ? CIRCUIT_LIGHT.flow : '#ffee58';
   const rad = Math.max(1.2, Math.min(2.6, FLOW_SPACING * cam.zoom * 0.18));
   for (const e of live) {
     const s = e.s;
@@ -425,9 +436,13 @@ function _drawTerm(a,b,g){ g.fillStyle='#37474f'; g.strokeStyle='#eceff1'; g.lin
 //     メニューとキャンバスの絵が食い違う。
 function drawCircuitElement(e, a, b, g, icon) {
   g = g || ctx;
+  // ★素子の中の塗り＝背景色（線を背景で隠して記号を抜く）。配色のプリセットに従う。
+  //   ツールメニューのアイコンはパネルの上に描くのでパネルの地の色のまま
+  const BG = icon ? '#1a1c23' : canvasBg();
+  const CC = circuitColor(g);
   const dx=b.x-a.x, dy=b.y-a.y, L=Math.hypot(dx,dy)||1;
   const ux=dx/L, uy=dy/L, nx=-uy, ny=ux, mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-  g.strokeStyle=CIRCUIT_COLOR; g.lineWidth=2; g.fillStyle='#1a1c23';
+  g.strokeStyle=CC; g.lineWidth=2; g.fillStyle=BG;
   const line=(p,q)=>{ g.beginPath(); g.moveTo(p.x,p.y); g.lineTo(q.x,q.y); g.stroke(); };
   const at=(d,off=0)=>({x:a.x+ux*d+nx*off, y:a.y+uy*d+ny*off});
   const label=(text,off)=>{ if (!icon) _label(mid,nx,ny,text,off,g); };
@@ -469,7 +484,7 @@ function drawCircuitElement(e, a, b, g, icon) {
     const bx = tip.x - (tip.x - cp.x) / (Math.hypot(tip.x - cp.x, tip.y - cp.y) || 1) * 7,
           by = tip.y - (tip.y - cp.y) / (Math.hypot(tip.x - cp.x, tip.y - cp.y) || 1) * 7;
     const px = -(tip.y - by) * 0.55, py = (tip.x - bx) * 0.55;
-    g.fillStyle = CIRCUIT_COLOR;
+    g.fillStyle = CC;
     g.beginPath(); g.moveTo(tip.x, tip.y); g.lineTo(bx + px, by + py); g.lineTo(bx - px, by - py);
     g.closePath(); g.fill();
     g.restore();
@@ -506,7 +521,7 @@ function drawCircuitElement(e, a, b, g, icon) {
   else if (e.type==='ammeter' || e.type==='voltmeter') {
     line(a, at(L/2-11)); line(at(L/2+11), b);
     g.beginPath(); g.arc(mid.x,mid.y,11,0,Math.PI*2); g.stroke();
-    g.fillStyle=CIRCUIT_COLOR; g.font='11px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle=CC; g.font='11px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText(e.type==='ammeter'?'A':'V', mid.x, mid.y);
     g.textAlign='start'; g.textBaseline='alphabetic';
     // ★計器の読みは回路の表と同じ有効数字3桁・同じ「ほぼ0」の床。小数2桁だと 10mA 台が
@@ -567,9 +582,9 @@ function drawCircuitElement(e, a, b, g, icon) {
       gr.addColorStop(1,   'rgba(255,170,60,0)');
       g.fillStyle = gr;
       g.beginPath(); g.arc(mid.x, mid.y, R, 0, Math.PI*2); g.fill();
-      g.fillStyle = '#1a1c23';
+      g.fillStyle = BG;
     }
-    g.strokeStyle = e.burnt ? '#78909c' : CIRCUIT_COLOR;
+    g.strokeStyle = e.burnt ? '#78909c' : CC;
     g.beginPath(); g.arc(mid.x,mid.y,11,0,Math.PI*2); g.fill(); g.stroke();
     const d=11*Math.SQRT1_2;                 // 丸の中の×（フィラメント）
     if (e.burnt) {                           // 切れた＝フィラメントが途切れた絵にする
@@ -580,7 +595,7 @@ function drawCircuitElement(e, a, b, g, icon) {
       g.beginPath(); g.moveTo(mid.x-d,mid.y-d); g.lineTo(mid.x+d,mid.y+d);
       g.moveTo(mid.x+d,mid.y-d); g.lineTo(mid.x-d,mid.y+d); g.stroke();
     }
-    g.strokeStyle = CIRCUIT_COLOR;
+    g.strokeStyle = CC;
     label(e.burnt ? '切れた' : `${e.Vr}V ${e.Pr}W`, 20);
   }
   // ★押しボタン：物体が乗ると閉じる。押されている状態を色で出す（原因が見えるように）
@@ -594,12 +609,12 @@ function drawCircuitElement(e, a, b, g, icon) {
     if (!icon) {                                          // 押される範囲を示す円
       g.save();
       g.setLineDash([4,3]);
-      g.strokeStyle = e._pressed ? '#66bb6a' : 'rgba(255,255,255,0.35)';
+      g.strokeStyle = e._pressed ? '#66bb6a' : cLine(0.35);
       g.lineWidth = e._pressed ? 2 : 1;
       g.beginPath(); g.arc(mid.x, mid.y, r, 0, Math.PI*2); g.stroke();
       g.restore();
     }
-    g.strokeStyle=CIRCUIT_COLOR;
+    g.strokeStyle=CC;
     label(e.nc ? '押すと切' : '押すと入', 22);
   }
   // ★電磁石：鉄心つきコイルの記号。電流が流れている間は磁場の及ぶ範囲を示す
@@ -629,7 +644,7 @@ function drawCircuitElement(e, a, b, g, icon) {
         g.lineWidth = 1.5;
         g.beginPath(); g.arc(mid.x, mid.y, R, 0, Math.PI*2); g.stroke();
         g.restore();
-        g.strokeStyle=CIRCUIT_COLOR;
+        g.strokeStyle=CC;
       }
       label(`${emagBz(e).toFixed(3)}T`, 22);
     }
@@ -642,9 +657,9 @@ function drawCircuitElement(e, a, b, g, icon) {
     for (let i=1;i<4;i++) g.lineTo(c[i].x,c[i].y);
     g.closePath(); g.fill(); g.stroke();
     line(c[0], c[2]);                                       // 斜線＝コイル
-    g.fillStyle=e._on?'#66bb6a':CIRCUIT_COLOR; g.font='9px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle=e._on?'#66bb6a':CC; g.font='9px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText('R'+(e.ch|0), mid.x+nx*14, mid.y+ny*14);
-    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle='#1a1c23';
+    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle=BG;
   }
   // ★リレー接点：スイッチ記号＋チャンネル番号（連動していることが番号で分かる）
   else if (e.type==='relayswitch') {
@@ -653,26 +668,26 @@ function drawCircuitElement(e, a, b, g, icon) {
     g.beginPath(); g.arc(hp.x,hp.y,3,0,Math.PI*2); g.stroke();
     g.beginPath(); g.arc(ep.x,ep.y,3,0,Math.PI*2); g.stroke();
     line(hp, e.closed ? ep : at(lead+30,-12));
-    g.fillStyle=CIRCUIT_COLOR; g.font='9px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle=CC; g.font='9px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText('R'+(e.ch|0)+(e.nc?'b':'a'), mid.x+nx*16, mid.y+ny*16);
-    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle='#1a1c23';
+    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle=BG;
   }
   // ★モーター端子：丸に M
   else if (e.type==='motor') {
     line(a, at(L/2-11)); line(at(L/2+11), b);
     g.beginPath(); g.arc(mid.x,mid.y,11,0,Math.PI*2); g.fill(); g.stroke();
-    g.fillStyle=CIRCUIT_COLOR; g.font='11px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle=CC; g.font='11px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText('M', mid.x, mid.y);
     g.font='9px sans-serif';
     g.fillText('M'+(e.ch|0), mid.x+nx*17, mid.y+ny*17);
-    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle='#1a1c23';
+    g.textAlign='start'; g.textBaseline='alphabetic'; g.fillStyle=BG;
     label(`${(e.I||0).toFixed(2)}A`, -18);
   }
   if (!icon) _drawTerm(a,b,g);
 }
 function _label(mid,nx,ny,text,off=16,g){
   g = g || ctx;
-  g.save(); g.fillStyle='#e0e6f0'; g.font='10px sans-serif'; g.textAlign='center';
+  g.save(); g.fillStyle=cText(1); g.font='10px sans-serif'; g.textAlign='center';
   g.fillText(text, mid.x+nx*off, mid.y+ny*off); g.restore();
 }
 // ツールメニュー用の回路記号アイコン。上の drawCircuitElement をそのまま使うので、
@@ -683,9 +698,11 @@ const CIRCUIT_ICON_W = 46, CIRCUIT_ICON_H = 26;
 // ★画面に出す高さ。描くのは上の 26px の座標のまま、表示だけ縮める（切れずに小さくなる）。
 //   測定の窓のアイコン（20px）と揃え、1行の高さを 28px にする（以前は 32px で窓が縦に長かった）
 const CIRCUIT_ICON_SHOW_H = 20;
-const _circuitIcons = new Map();   // type -> canvas（メニューは1つしか開かないので使い回せる）
+const _circuitIcons = new Map();   // type|配色 -> canvas（メニューは1つしか開かないので使い回せる）
 function circuitSymbolCanvas(type) {
-  let cv = _circuitIcons.get(type);
+  // ★配色ごとに別の絵を覚える（白と黒で線の色・中の塗りが違う。theme.js）
+  const key = type + '|' + uiTheme;
+  let cv = _circuitIcons.get(key);
   if (cv) return cv;
   cv = document.createElement('canvas');
   const dpr = window.devicePixelRatio || 1;
@@ -693,13 +710,13 @@ function circuitSymbolCanvas(type) {
   const k = CIRCUIT_ICON_SHOW_H / CIRCUIT_ICON_H;
   cv.style.width = (CIRCUIT_ICON_W * k).toFixed(1) + 'px'; cv.style.height = CIRCUIT_ICON_SHOW_H + 'px';
   cv.style.flex = '0 0 auto';
-  const g = cv.getContext('2d');
+  const g = themeHookContext(cv.getContext('2d'), true);
   g.scale(dpr, dpr);
   g.lineCap = 'round'; g.lineJoin = 'round';
   const y = CIRCUIT_ICON_H / 2;
   drawCircuitElement(new CircuitElement(type, 0, 0, 0, 0),
                      { x: 3, y }, { x: CIRCUIT_ICON_W - 3, y }, g, true);
-  _circuitIcons.set(type, cv);
+  _circuitIcons.set(key, cv);
   return cv;
 }
 

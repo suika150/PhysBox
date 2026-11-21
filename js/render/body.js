@@ -78,7 +78,7 @@ function drawBody(b, isSelected) {
     ctx.fillStyle = _fill;
     ctx.fill();
     if (b.strokeWidth > 0) {
-      ctx.strokeStyle = b.strokeColor;
+      ctx.strokeStyle = cInk(b.strokeColor);   // ★背景に溶ける枠の色は読み替える（theme.js）
       ctx.lineWidth = b.strokeWidth;
       ctx.stroke();
     }
@@ -96,7 +96,7 @@ function drawBody(b, isSelected) {
     ctx.fillStyle = _fill;
     ctx.fill();
     if (b.strokeWidth > 0) {
-      ctx.strokeStyle = b.strokeColor;
+      ctx.strokeStyle = cInk(b.strokeColor);
       ctx.lineWidth = b.strokeWidth;
       ctx.stroke();
     }
@@ -111,7 +111,7 @@ function drawBody(b, isSelected) {
     ctx.fillStyle = _fill;
     ctx.fill('evenodd');                             // ★even-odd で穴をくり抜く
     if (b.strokeWidth > 0) {
-      ctx.strokeStyle = b.strokeColor;
+      ctx.strokeStyle = cInk(b.strokeColor);
       ctx.lineWidth = b.strokeWidth;
       ctx.stroke();                                  // 穴の縁も一緒に描かれる
     }
@@ -132,7 +132,7 @@ function drawBody(b, isSelected) {
   if (b.layers === 0 || b.isSpawner) {
     ctx.globalAlpha = b.alpha;     // ★破線の枠だけは薄めない（ここが「入口」の目印なので）
     ctx.setLineDash([4/cam.zoom, 4/cam.zoom]);
-    ctx.strokeStyle = b.isSpawner ? (b.strokeColor || '#ffffff') : 'rgba(255,255,100,0.7)';
+    ctx.strokeStyle = b.isSpawner ? cInk(b.strokeColor || '#ffffff') : 'rgba(255,255,100,0.7)';
     ctx.lineWidth = 2/cam.zoom;
     ctx.beginPath();
     if (b.type === 'circle') {

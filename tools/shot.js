@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// physBox.html を Chromium で開いてスクリーンショットを撮る。
+// index.html を Chromium で開いてスクリーンショットを撮る。
 //
 //   node tools/shot.js out.png                         キャンバスだけ（既定・軽い）
 //   node tools/shot.js out.png --full                  ページ全体
@@ -41,7 +41,7 @@ function arg(name, fallback) {
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  const url = pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href;
+  const url = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
 

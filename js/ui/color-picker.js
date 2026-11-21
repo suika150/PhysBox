@@ -98,8 +98,6 @@ const COLOR_TARGETS = {
                           const sw = document.getElementById(id);
                           if (sw) sw.style.background = v;
                         } } },
-  bg:     { get: () => world.bgColor,
-            set: v => worldUpdate('bgColor', v) },
 };
 let colorPopup = null;
 let _cpOutside = null;

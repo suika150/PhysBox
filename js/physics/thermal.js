@@ -39,6 +39,10 @@
 //  さらに密度 rho は Σ(1-r/h)² ＝ **個数**密度で、restDensity: 4.0 は「近傍が4個」
 //  という意味なので、質量の違う粒子を混ぜた瞬間にこの量の意味が壊れる。浮力も
 //  PARTICLE_TYPES.fluid.density を単一の液体として読んでいる。
+//  ☆2026-11-20：密度の違う液体（水・油・食塩水）を入れたので、上の2点は液体については外れた。
+//    補正は質量の逆比で分け（同じ液体どうしは 0.5 のまま）、浮力は層ごとの密度を積む
+//    （particles.js の LIQUID_TYPES の★）。個数密度のままなのは、どの液体も同じ間隔で
+//    詰まる（1粒の体積が等しい）とみなしたため。相転移が重いという結論は変わらない。
 //  つまり相転移は「機能追加」ではなく SPH の核の作り直しになる。
 //  逆向き（凝固）はさらに重い：粒子群 → 輪郭 → 凸分解 → Body の生成が要り、
 //  ジョイント・選択・undo・シーン保存の全部に波及する。
@@ -390,18 +394,30 @@ const THERMAL_COLORS = [
   [245, 160,  50],
   [210,  40,  30],   // 熱
 ];
+// ★明るい背景用。中間の白っぽい灰は白い背景に溶けるので中間を中くらいの灰にし、
+//   両端も一段濃くする（冷＝青・熱＝赤の並びと「中間は無彩色」はそのまま）
+const THERMAL_COLORS_LIGHT = [
+  [ 30,  55, 165],
+  [ 35, 135, 205],
+  [150, 155, 160],
+  [235, 140,  30],
+  [195,  35,  25],
+];
 function tempToColor(tempK, alpha) {
   const lo = world.thermalVizMin, hi = world.thermalVizMax;
   let u = (hi > lo) ? (K2C(tempK) - lo) / (hi - lo) : 0.5;
   u = u < 0 ? 0 : u > 1 ? 1 : u;
-  const n = THERMAL_COLORS.length - 1;
+  const C = isLightCanvas() ? THERMAL_COLORS_LIGHT : THERMAL_COLORS;
+  const n = C.length - 1;
   const f = u * n, i = Math.min(n - 1, Math.floor(f)), t = f - i;
-  const a = THERMAL_COLORS[i], b = THERMAL_COLORS[i + 1];
+  const a = C[i], b = C[i + 1];
   const r = Math.round(a[0] + (b[0] - a[0]) * t);
   const g = Math.round(a[1] + (b[1] - a[1]) * t);
   const bl = Math.round(a[2] + (b[2] - a[2]) * t);
-  return alpha !== undefined && alpha < 1
-    ? `rgba(${r},${g},${bl},${alpha})` : `rgb(${r},${g},${bl})`;
+  // ★温度の色は一般の読み替え（theme.js）に通さず素通しにする。明るい背景用の色は上の
+  //   THERMAL_COLORS_LIGHT で決めてある（機械的に暗くすると、中間と両端の見分けが崩れる）。
+  return themeRaw(alpha !== undefined && alpha < 1
+    ? `rgba(${r},${g},${bl},${alpha})` : `rgb(${r},${g},${bl})`);
 }
 // ── 系の総熱量 Σ C·T [J]（保存の確認用。UI にも出す）──────────────────
 //   基準は 0K。差分だけ見たいので絶対値そのものに意味はないが、

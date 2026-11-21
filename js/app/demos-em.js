@@ -3073,6 +3073,162 @@ function demoParallelPlateCapacitor() {
   demoNote (p.x, noteY, NOTE, DEMO_NOTE_SIZE * ts);
 }
 
+// ── コンデンサーのつなぎ替え（C1 を充電して C2 へ移す）───────────────
+//  ★題材は「C1 にためた電気量を C2 と分け合う」。電気量の和は変わらず、最後は
+//    両方の電圧がそろって V = C1·E/(C1+C2)。平行板コンデンサーモデル（電子の粒）と
+//    同じつなぎ替えを、値の読める回路素子で組んだもの（粒の模型では Q = CV が出ない）。
+//  ★回路（コンデンサーを含む直流回路と同じく、手で組める部品だけ）：
+//      電源 ─ S1 ─ R1 ─┬─ S2 ─ R2 ─┐
+//                      C1           C2
+//      電源 ───────────┴────────────┘
+//    S1 を入れて C1 を充電 → S1 を切る → S2 を入れると C1 から C2 へ移る。
+//    ★スイッチは1枚ずつでよい（回路素子では、切れた枝に電流の通り道が無い。
+//      粒の模型で板を2枚にした理由はここには無い）。
+//  ★R1・R2 を入れる理由：無いと充電もつなぎ替えも 1 tick で終わり、グラフが段になるだけ
+//    （理想電源と C を直につなぐのは短絡と同じ）。
+//    充電の τ = R1·C1 = 2秒、つなぎ替えの τ = R2·C1C2/(C1+C2) = 1秒（同じ容量のとき）。
+//  ★グラフは C1 と C2 の電圧を**重ねて**1枚に描く（段積みにしない）。2本が寄っていって
+//    同じ高さで止まる、が見たいことそのもので、段に分けると高さを比べにくい。
+//    電流は切る（C1 と C2 の電流は向きが逆で大きさが同じ＝絵が混む）。
+const CT_E  = 10;           // [V]  起電力
+const CT_R1 = 20;           // [Ω]  充電の抵抗
+const CT_R2 = 20;           // [Ω]  つなぎ替えの抵抗
+const CT_C  = 0.1;          // [F]  C1・C2 の初期値（同じ容量で、電圧がちょうど半分になる）
+const CT_CLO = 20, CT_CHI = 100;     // [mF] 容量つまみの範囲（コンデンサーを含む直流回路と同じ）
+function demoCapacitorTransfer() {
+  resetDemoWorld();
+  setDemoGravity(0);              // ★回路図だけ。重力も地面も出さない
+  updateGroundTerrain(false);
+
+  setDemoCam(-700, 0.8);          // ★コンデンサーを含む直流回路と同じ構え。横に長いぶん少し引く
+  const ts = demoTextScale(cam.zoom);
+  const H = 260;
+  const OX = cam.x + (440 * demoFitScale() - canvas.width / 2) / cam.zoom;
+  // ★上の辺の上にスイッチのリモコン（畳んだ窓 125px）を置くので、上の辺は画面の上から
+  //   操作ヒントの帯（〜64px）＋窓＋すき間 SW_GAP より下へ。足りる画面なら本文に揃えた 150px のまま
+  const SW_GAP = 10, SW_H = 125;
+  const OY = cam.y + (Math.max(150 * demoFitScale(), 64 + SW_H + SW_GAP + 4) - canvas.height / 2) / cam.zoom;
+  const XA = OX + 300, X2 = XA + 290, Y0 = OY, Y1 = OY + H;
+  const MA = OY + H / 2 - 40, MB = OY + H / 2 + 40;   // 縦の辺に入れる素子の上端・下端
+  const add = (type, ax, ay, bx, by, o) => {
+    const e = new CircuitElement(type, ax, ay, bx, by);
+    Object.assign(e, o || {});
+    circuitElements.push(e);
+    return e;
+  };
+  // 左の辺：電源（1点目が＋極＝上）
+  add('wire', OX, Y0, OX, MA);
+  const src = add('dcsource', OX, MA, OX, MB, { V: CT_E, r: 0 });
+  add('wire', OX, MB, OX, Y1);
+  // 上の辺の左半分：S1 → R1 → C1 の節点
+  add('wire', OX, Y0, OX + 40, Y0);
+  const s1 = add('switch', OX + 40, Y0, OX + 110, Y0, { closed: false });
+  add('wire', OX + 110, Y0, OX + 150, Y0);
+  add('resistor', OX + 150, Y0, XA - 40, Y0, { R: CT_R1 });
+  add('wire', XA - 40, Y0, XA, Y0);
+  // 真ん中：C1
+  add('wire', XA, Y0, XA, MA);
+  const c1 = add('capacitor', XA, MA, XA, MB, { C: CT_C });
+  add('wire', XA, MB, XA, Y1);
+  // 上の辺の右半分：S2 → R2 → 右の角
+  add('wire', XA, Y0, XA + 40, Y0);
+  const s2 = add('switch', XA + 40, Y0, XA + 110, Y0, { closed: false });
+  add('wire', XA + 110, Y0, XA + 140, Y0);
+  add('resistor', XA + 140, Y0, X2 - 40, Y0, { R: CT_R2 });
+  add('wire', X2 - 40, Y0, X2, Y0);
+  // 右の辺：C2
+  add('wire', X2, Y0, X2, MA);
+  const c2 = add('capacitor', X2, MA, X2, MB, { C: CT_C });
+  add('wire', X2, MB, X2, Y1);
+  // 下の辺
+  add('wire', X2, Y1, XA, Y1);
+  add('wire', XA, Y1, OX, Y1);
+
+  // ── 回路の表：C1・C2 だけ（電気量 Q を読み、足し算で電気量保存を確かめる）──
+  for (const e of [c1, c2]) addCircTable(e.id);
+
+  const p = demoTextTopLeft();
+  // ★本文は9行まで。リモコンが2段で縦を食うので、1280×720 だとそれより長いと
+  //   リモコンの窓に最終行が隠れる（実測。12行の版は3行隠れ、いまの9行は収まる）。
+  //   横も「グラフの下の U の和は減る…」の行がほぼ回路の左端まで来ている。グラフの色は札の色で示す
+  //   ★U は表には無く（表は V・I・Q）、グラフの下の読み取りにだけ出るので「グラフの下の」と書く
+  const NOTE = 'C1 にためた電気を C2 へ移す。\n'
+  + '\n'
+  + '【手順】▶実行 を押す\n'
+  + '・S1 を入れて（キー 1）C1 を充電し、切る\n'
+  + '・S2 を入れる（キー 2）：C1 から C2 へ流れ、\n'
+  + '　2つの電圧がそろうと止まる\n'
+  + '・表の Q の和は移す前と同じ（電気量保存）\n'
+  + '・グラフの下の U の和は減る（抵抗で熱になる）\n'
+  + '・容量を変える：V ＝ C1·E ／（C1＋C2）';
+  const noteY = p.y + 54 * ts;
+
+  // ── 窓の置き場所（キャンバスの左うえを原点とする画面 px）──
+  //   ★リモコンは畳んだ窓にして、それぞれ操る素子のそばに置く（指示）：
+  //     S1・S2 はスイッチの真上、C1・C2 はコンデンサーの真下、電圧は電源の左。
+  //     畳んでもボタン・スライダーは残るので操作はできる（Remote の collapsed の★）。
+  //     開いた窓（170×180px）のままでは回路の周りに収まらない。
+  //   ★グラフは左下の空き（本文と電圧のリモコンの下、C1 のリモコンの左）。
+  const toSX = wx => (wx - cam.x) * cam.zoom + canvas.width / 2;
+  const toSY = wy => (wy - cam.y) * cam.zoom + canvas.height / 2;
+  const noteBot = toSY(demoNoteBelow(noteY, NOTE, 0, DEMO_NOTE_SIZE * ts));
+  const GAP = 8;
+  const put = (r, x, y) => {                // 窓の左うえを画面 (x, y) へ
+    r.collapsed = true; syncRemotePanel(r);
+    r.fx = x / canvas.width; r.fy = y / canvas.height;
+    placeRemotePanel(r);
+  };
+  const size = r => ({ w: r.panel.offsetWidth || 170, h: r.panel.offsetHeight || 110 });
+  const sw1 = addRemote('ghost', s1, 'circuit');
+  const sw2 = addRemote('ghost', s2, 'circuit');
+  const kv  = addRemote('prop', src, 'circuit');
+  const kc1 = addRemote('prop', c1, 'circuit');
+  const kc2 = addRemote('prop', c2, 'circuit');
+  if (sw1) sw1.key = 'Digit1';
+  if (sw2) sw2.key = 'Digit2';
+  if (kv)  { kv.prop  = 'V'; kv.lo  = 0;      kv.hi  = 20; }
+  if (kc1) { kc1.prop = 'C'; kc1.lo = CT_CLO; kc1.hi = CT_CHI; }
+  if (kc2) { kc2.prop = 'C'; kc2.lo = CT_CLO; kc2.hi = CT_CHI; }
+  for (const [r, sw] of [[sw1, s1], [sw2, s2]]) if (r) {
+    r.collapsed = true; syncRemotePanel(r);
+    const { w, h } = size(r);
+    put(r, toSX((sw.ax + sw.bx) / 2) - w / 2, toSY(Y0) - SW_GAP - h);
+  }
+  for (const [r, c] of [[kc1, c1], [kc2, c2]]) if (r) {
+    r.collapsed = true; syncRemotePanel(r);
+    put(r, toSX(c.ax) - size(r).w / 2, toSY(Y1) + GAP + 4);
+  }
+  let kvBot = noteBot;
+  if (kv) {
+    kv.collapsed = true; syncRemotePanel(kv);
+    const { w, h } = size(kv);
+    // ★電源の札「10V」が素子の左 30px ほどに出るので、そのぶん離す
+    put(kv, toSX(OX) - 40 - w, Math.max(noteBot + GAP, toSY((MA + MB) / 2) - h / 2));
+    kvBot = kv.panel.offsetTop + kv.panel.offsetHeight;
+  }
+  // ── グラフ：C1 と C2 の電圧を重ねる ──
+  const g = circGraphOpen([c1.id, c2.id], { stacked: false, showI: false });
+  if (g) {
+    const gl = 56, gt = Math.max(kvBot, toSY(Y1)) + GAP + 4, EDGE = 14;
+    const gr = kc1 ? kc1.panel.offsetLeft - GAP : canvas.width - EDGE;
+    sizeDemoGraph(g, Math.min(640, gr - gl), canvas.height - gt - EDGE);
+    g.panel.style.left = gl + 'px'; g.panel.style.right = 'auto';
+    moveDemoGraphBottom(g);
+  }
+
+  // ── 札 ──
+  //   ★S1・S2 の札は、上にリモコンが来るのでスイッチの下（輪の内側）へ
+  const LC = '#ffd54f';
+  demoLabel(OX + 75 - 14, Y0 + 14 * ts, 'S1', LC, DEMO_NOTE_SIZE * ts, true);
+  demoLabel(XA + 75 - 14, Y0 + 14 * ts, 'S2', LC, DEMO_NOTE_SIZE * ts, true);
+  // ★C1・C2 の札は容量の札（左）・表（右）を避けて素子の下へ。色はグラフの線と同じ
+  demoLabel(XA - 50 * ts, MB + 6 * ts, 'C1', CG_COLORS[0], DEMO_NOTE_SIZE * ts, true);
+  demoLabel(X2 - 50 * ts, MB + 6 * ts, 'C2', CG_COLORS[1], DEMO_NOTE_SIZE * ts, true);
+
+  demoTitle(p.x, p.y, 'コンデンサーのつなぎ替え', DEMO_TITLE_SIZE * ts);
+  demoNote (p.x, noteY, NOTE, DEMO_NOTE_SIZE * ts);
+}
+
 // ════════════════════════════════════════
 //  ホイートストンブリッジ
 // ════════════════════════════════════════

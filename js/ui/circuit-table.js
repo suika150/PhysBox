@@ -245,8 +245,8 @@ function drawCircTables() {
       ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(m.x, m.y); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = 'rgba(26,28,35,0.9)';
-    ctx.strokeStyle = (_ctDrag && _ctDrag.t === t) ? '#fff' : CT_COLOR;
+    ctx.fillStyle = cpal().hudBg;
+    ctx.strokeStyle = (_ctDrag && _ctDrag.t === t) ? cText(1) : CT_COLOR;
     ctx.lineWidth = 1;
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(r.x + 0.5, r.y + 0.5, r.w, r.h, 4); else ctx.rect(r.x + 0.5, r.y + 0.5, r.w, r.h);
@@ -254,8 +254,8 @@ function drawCircTables() {
     ctx.font = CT_FONT + 'px sans-serif';
     lines.forEach(([l, v], i) => {
       const y = r.y + 4 + (CT_FONT + 5) * (i + 0.5);
-      ctx.textAlign = 'left';  ctx.fillStyle = '#9aa4b2'; ctx.fillText(l, r.x + 7, y);
-      ctx.textAlign = 'right'; ctx.fillStyle = '#eceff1'; ctx.fillText(v, r.x + r.w - 7, y);
+      ctx.textAlign = 'left';  ctx.fillStyle = cText(0.6); ctx.fillText(l, r.x + 7, y);
+      ctx.textAlign = 'right'; ctx.fillStyle = cText(1); ctx.fillText(v, r.x + r.w - 7, y);
     });
   }
   ctx.restore();

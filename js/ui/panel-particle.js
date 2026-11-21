@@ -12,7 +12,13 @@ function updateParticlePanel() {
   _hideAllPropForms();
   document.getElementById('particle-form').style.display = '';
   const gas = list.filter(p => p.type === 'gas').length;
-  const kind = gas === 0 ? '液体' : gas === list.length ? '気体' : `液体${list.length-gas}＋気体${gas}`;
+  // ★液体は種類ごとに数える（水・油・食塩水。1種類だけなら名前だけ）
+  const liqN = {};
+  for (const p of list) if (p.liq) liqN[p.liq] = (liqN[p.liq] || 0) + 1;
+  const liqKeys = Object.keys(liqN);
+  const liqText = liqKeys.length === 1 && !gas ? LIQUID_LABELS[liqKeys[0]] || '液体'
+                : liqKeys.map(k => (LIQUID_LABELS[k] || '液体') + liqN[k]).join('＋');
+  const kind = gas === 0 ? liqText : gas === list.length ? '気体' : `${liqText}＋気体${gas}`;
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
   set('pcl-kind',  kind);
   set('pcl-count', list.length);
@@ -107,7 +113,7 @@ function resetParticleColor() {
     return;
   }
   particleColor = null;
-  showParticleSwatch((currentTool === 'gas' ? PARTICLE_TYPES.gas : PARTICLE_TYPES.fluid).color);
+  showParticleSwatch(particleToolDefaultColor());
 }
 // 色の見本はツール窓と右パネルの2か所にある（地面の色と同じ扱い）
 function showParticleSwatch(c) {

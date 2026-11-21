@@ -91,7 +91,7 @@ const MEASURE = async (c) => {
 
 (async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
-  const url = pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href;
+  const url = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
   for (const c of CONDS) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errors = [];

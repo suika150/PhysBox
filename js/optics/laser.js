@@ -1062,10 +1062,22 @@ function drawLasers() {
       const tx = dx0*ca - dy0*sa, ty = dx0*sa + dy0*ca;
       ctx.setTransform(m, n, -n, m, cx + tx - (m*cx - n*cy), cy + ty - (n*cx + m*cy));
     }
+    // ★明るい背景では、光を「足す」だけだと白い背景に溶けて見えない（白色光は完全に消える）。
+    //   ビーム層の形をそのまま黒く・少し太らせた「暗い芯」を先に敷き、その上に光を足す。
+    //   光の色と加算の合成（重なると明るくなる）は暗い背景のときと同じに保てる。
+    if (isLightCanvas()) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.filter = 'brightness(0) blur(1.5px)';
+      ctx.globalAlpha = 0.8;
+      ctx.drawImage(lc, 0, 0);
+      ctx.filter = 'none';
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'lighter';
+    }
     ctx.drawImage(lc, 0, 0);
     ctx.restore();
   }
-  drawScreens();          // ★スクリーンに映った縞と断面グラフ（ビーム層を貼ったあとに重ねる）
+  drawScreens();         // ★スクリーンに映った縞と断面グラフ（ビーム層を貼ったあとに重ねる）
   ctx.save();
   for (const L of lasers) {
     const o = L.getOrigin();

@@ -111,9 +111,9 @@ function momGraphBuildPanel(g) {
     '<div class="vg-controls mg-legend"></div>' +
     '<div class="vg-controls">' +
       '<span class="vg-grp" title="運動量はベクトルなので、成分ごとに見ます。&#10;水平に外力が無ければ px は厳密に一定、重力があれば py は時間に比例して増えます">成分</span>' +
-      '<label class="vg-check"><input type="radio" name="mgcomp' + g.id + '" class="mg-x">px</label>' +
-      '<label class="vg-check"><input type="radio" name="mgcomp' + g.id + '" class="mg-y">py</label>' +
-      '<label class="vg-check" title="合計ベクトルの大きさ |Σp|。★各物体の |p| の和ではありません（そちらは保存しません）。&#10;この表示のときは内訳を出しません（並べると誤読を招くため）"><input type="radio" name="mgcomp' + g.id + '" class="mg-mag">|Σp|</label>' +
+      '<label class="vg-check"><input type="radio" name="mgcomp' + Number(g.id) + '" class="mg-x">px</label>' +
+      '<label class="vg-check"><input type="radio" name="mgcomp' + Number(g.id) + '" class="mg-y">py</label>' +
+      '<label class="vg-check" title="合計ベクトルの大きさ |Σp|。★各物体の |p| の和ではありません（そちらは保存しません）。&#10;この表示のときは内訳を出しません（並べると誤読を招くため）"><input type="radio" name="mgcomp' + Number(g.id) + '" class="mg-mag">|Σp|</label>' +
     '</div>' +
     '<div class="vg-controls">' +
       '<label class="vg-check" title="物体ごとの運動量を重ねます。衝突で「Aが失った分だけBが得る」受け渡しが読めます"><input type="checkbox" class="mg-parts">内訳</label>' +
@@ -125,7 +125,7 @@ function momGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel    = panel;
   g.canvas   = panel.querySelector('canvas');
-  g.ctx      = g.canvas.getContext('2d');
+  g.ctx      = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl  = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.recBtn   = panel.querySelector('.mg-rec');
@@ -189,7 +189,7 @@ function mgRefreshLegend(g) {
     const bs = momGraphBodies(g);
     for (let i = 0; i < bs.length; i++)
       out += '<span class="vg-check"><span class="vg-chip" style="background:' + MG_COLORS[i % MG_COLORS.length] + '"></span>'
-           + mgBodyName(bs[i]) + '</span>';
+           + escHtml(mgBodyName(bs[i])) + '</span>';   // ★物体の名前（シーンの中身）
   } else if (g.comp === 'mag' && g.showParts) {
     out += '<span class="vg-hint">（|Σp| では内訳を出しません：各物体の |p| の和は保存しないため）</span>';
   }

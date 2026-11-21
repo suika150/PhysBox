@@ -113,8 +113,8 @@ function tgAddSeries(g, ids) {
 function tgLegendHTML(g) {
   let out = '<span class="vg-grp" title="「＋選択を追加」で、いま選んでいる物体をあとから足せます。足した時点から線が始まります">系列</span>';
   for (const s of g.series)
-    out += '<span class="vg-check"><span class="vg-chip" style="background:' + s.col + '"></span>' +
-           tgSeriesName(s) + '</span>';
+    out += '<span class="vg-check"><span class="vg-chip" style="background:' + escHtml(s.col) + '"></span>' +
+           escHtml(tgSeriesName(s)) + '</span>';   // ★物体の名前・色（シーンの中身）
   return out;
 }
 function tgRefreshLegend(g) {
@@ -169,7 +169,7 @@ function tempGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel    = panel;
   g.canvas   = panel.querySelector('canvas');
-  g.ctx      = g.canvas.getContext('2d');
+  g.ctx      = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl  = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.recBtn   = panel.querySelector('.tg-rec');

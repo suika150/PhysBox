@@ -494,19 +494,21 @@ function refreshBulkNote() {
   el.style.display = '';
   // ★粒子には「代表」が無い。パネルは選択ぜんぶの平均を出しているので、そう書く
   //   （「オブジェタブの一番上のもの」という説明は、一覧に出ない粒子には当てはまらない）。
+  // ★label は型名の言い換え。言い換えの無い型は型名（シーンの中身）がそのまま来るので逃がす
+  const label = escHtml(info.label), editLabel = escHtml(info.editLabel);
   if (info.kind === 'particle') {
-    el.innerHTML = `<b>${info.label} ${info.n}個</b>をまとめて編集中<br>` +
+    el.innerHTML = `<b>${label} ${info.n}個</b>をまとめて編集中<br>` +
       '<span style="color:var(--text2)">温度は選択ぜんぶの平均です。' +
       '打ち替えると、選択中の全部がその温度になります</span>';
     return;
   }
   el.innerHTML = info.n === info.nEdit
-    ? `<b>${info.label} ${info.n}個</b>をまとめて編集中<br>` +
+    ? `<b>${label} ${info.n}個</b>をまとめて編集中<br>` +
       '<span style="color:var(--text2)">表示中の値はオブジェタブの一番上のものです。' +
       'ここを変えると選択中の全部に同じ値が入ります</span>'
     // 型が混ざっているとき（回路を枠で囲んだ場合など）。移動・削除は全部、値は同じ型だけ
-    : `<b>${info.label} ${info.n}個</b>を選択中（移動・削除はこの${info.n}個）<br>` +
-      `<span style="color:var(--text2)">値を変えると、同じ型の<b>${info.editLabel} ${info.nEdit}個</b>` +
+    : `<b>${label} ${info.n}個</b>を選択中（移動・削除はこの${info.n}個）<br>` +
+      `<span style="color:var(--text2)">値を変えると、同じ型の<b>${editLabel} ${info.nEdit}個</b>` +
       'に入ります。表示中の値はオブジェタブの一番上のものです</span>';
 }
 // ── 範囲選択の枠に何が入っているか ─────────────────────────

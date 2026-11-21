@@ -38,7 +38,7 @@ const CASES = [
     //   眠りのタイマーや前のリモコンの印が残る経路がある）。
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.on('pageerror', e => errors.push(String(e)));
-    await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+    await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                     { waitUntil: 'load' });
     await page.waitForSelector('#main-canvas');
     const rec = await page.evaluate(({ src, mode }) => {

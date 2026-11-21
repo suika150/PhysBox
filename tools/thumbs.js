@@ -125,7 +125,7 @@ function captureInPage({ W, H, q, PAD, MIN_CROP_W, crop }) {
   let current = '(起動)';
   page.on('pageerror', e => errors.push(`${current}: ${e}`));
   page.on('console', m => { if (m.type() === 'error') errors.push(`${current}: ${m.text()}`); });
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
 

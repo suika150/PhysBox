@@ -114,7 +114,7 @@ window.__run = function (settle, avg, mirror, cfg) {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
   await page.evaluate(CODE);

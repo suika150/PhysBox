@@ -212,7 +212,7 @@ function drawScreens() {
     const a0 = worldToScreen(b.x - tx*e.len/2, b.y - ty*e.len/2);
     const a1 = worldToScreen(b.x + tx*e.len/2, b.y + ty*e.len/2);
     const H = SCREEN_GRAPH_H;
-    ctx.strokeStyle = 'rgba(255,255,255,0.30)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = cLine(0.30); ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(a1.x, a1.y); ctx.stroke();
     ctx.setLineDash([]);
@@ -228,14 +228,14 @@ function drawScreens() {
     ctx.closePath();
     ctx.fillStyle = 'rgba(79,195,247,0.22)'; ctx.fill();
     ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';           // 相対強度 0.5 / 1.0 の目盛り
+    ctx.strokeStyle = cLine(0.16);           // 相対強度 0.5 / 1.0 の目盛り
     for (const v of [0.5, 1]) {
       ctx.beginPath();
       ctx.moveTo(a0.x + nx*H*v, a0.y + ny*H*v);
       ctx.lineTo(a1.x + nx*H*v, a1.y + ny*H*v);
       ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillStyle = cText(0.75);
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillText('相対強度 1', a1.x + nx*H + 5, a1.y + ny*H);
     _drawScreenPeaks(e, a0, a1);

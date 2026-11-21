@@ -7,7 +7,7 @@ const { pathToFileURL } = require('url');
 
 (async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
-  const url = pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href;
+  const url = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
   console.log(' damp │ 内部サブステップ │ ms/tick（simTick 300回の平均） │ 実測FPS');
   for (const damp of [0, 0.3, 0, 0.3]) {         // ★往復して測る（1回目は暖まっていない）
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

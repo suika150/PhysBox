@@ -18,13 +18,12 @@ function drawGrid() {
   const gsW = gridStep();                 // [px] ワールド単位の間隔
   const gs  = gsW * cam.zoom;             // 画面上の間隔
   if (gs < 3) return;                     // 細かすぎるときは描かない（線で埋まるだけ）
-  const emph  = gridSnapActiveNow() ? 1.7 : 1;    // スナップ中は少し濃くして格子点を見やすく
   const b = visibleWorldBounds();
   const crisp = cam.angle ? (v => v) : (v => Math.round(v) + 0.5);
   ctx.save();
   ctx.lineWidth = 1;
-  const drawSet = (step, alpha) => {
-    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+  const drawSet = (step, color) => {
+    ctx.strokeStyle = color;
     for (let k = Math.ceil(b.x0/step); k*step <= b.x1; k++) {
       const p0 = worldToScreen(k*step, b.y0), p1 = worldToScreen(k*step, b.y1);
       ctx.beginPath(); ctx.moveTo(crisp(p0.x), p0.y); ctx.lineTo(crisp(p1.x), p1.y); ctx.stroke();
@@ -34,8 +33,11 @@ function drawGrid() {
       ctx.beginPath(); ctx.moveTo(p0.x, crisp(p0.y)); ctx.lineTo(p1.x, crisp(p1.y)); ctx.stroke();
     }
   };
-  drawSet(gsW, Math.min(0.04*emph, 0.12));
-  if (gs*5 >= 6) drawSet(gsW*5, Math.min(0.07*emph, 0.2));
+  // ★色は配色のプリセット（theme.js）から。白では不透明の指定色なので、スナップ中の
+  //   「少し濃く」も倍率ではなく濃い色を別に持つ
+  const pal = cpal(), snap = gridSnapActiveNow();
+  drawSet(gsW, snap ? pal.gridMinorSnap : pal.gridMinor);
+  if (gs*5 >= 6) drawSet(gsW*5, snap ? pal.gridMajorSnap : pal.gridMajor);
   ctx.restore();
 }
 // ─── グリッドの目盛り（縦軸・横軸に「何 m か」を書く）──────────────────
@@ -79,12 +81,12 @@ function drawGridLabels() {
   ctx.save();
   ctx.font = '10px sans-serif';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(0,0,0,0.7)';                   // 縁取り：地面や物体の上でも読めるように
+  ctx.strokeStyle = cHalo(0.7);                   // 縁取り：地面や物体の上でも読めるように
   ctx.lineWidth = 3;
   const put = (s, x, y) => { ctx.strokeText(s, x, y); ctx.fillText(s, x, y); };
   const tickAt = (x0, y0, x1, y1) => {                   // 軸の上の短い目盛り線
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = cLine(0.45); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
     ctx.restore();
   };
@@ -92,7 +94,7 @@ function drawGridLabels() {
   const along = (dx, dy) => worldToScreenDir(dx, dy);
   // ── 横軸（x座標）──
   const aX = along(1, 0), pX = along(0, 1);              // 軸に沿う向き／垂直な向き
-  ctx.fillStyle = 'rgba(224,230,240,0.8)';
+  ctx.fillStyle = cText(0.8);
   ctx.textAlign = 'center';
   for (let k = Math.ceil(b.x0/step - 1e-9); k*step <= b.x1; k++) {
     const q = worldToScreen(k*step, 0);
@@ -135,17 +137,17 @@ function drawAxes() {
   const crisp = cam.angle ? (v => v) : (v => Math.round(v) + 0.5);
   ctx.save();
   ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';   // グリッド(0.04〜0.2)より濃く、物体より薄く
+  ctx.strokeStyle = cLine(0.35);   // グリッド(0.04〜0.2)より濃く、物体より薄く
   if (onX) { const p0 = worldToScreen(b.x0, 0), p1 = worldToScreen(b.x1, 0);
              ctx.beginPath(); ctx.moveTo(p0.x, crisp(p0.y)); ctx.lineTo(p1.x, crisp(p1.y)); ctx.stroke(); }
   if (onY) { const p0 = worldToScreen(0, b.y0), p1 = worldToScreen(0, b.y1);
              ctx.beginPath(); ctx.moveTo(crisp(p0.x), p0.y); ctx.lineTo(crisp(p1.x), p1.y); ctx.stroke(); }
   if (onX && onY) {                       // 原点が見えているときだけ印と座標を出す
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.strokeStyle = cLine(0.6);
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(o.x, o.y, 4, 0, Math.PI*2); ctx.stroke();
     ctx.font = '11px sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillStyle = cText(0.75);
     ctx.fillText('O (0, 0)', o.x + 7, o.y - 7);
   }
   ctx.restore();
@@ -199,7 +201,7 @@ function drawInfiniteGround() {
   ctx.lineTo(sRight.x, sDeep);
   ctx.lineTo(sLeft.x,  sDeep);
   ctx.closePath();
-  ctx.fillStyle = ground.fillColor;
+  ctx.fillStyle = groundFillColor(ground.fillColor);   // ★明るい背景では淡くする（theme.js）
   ctx.fill();
   ctx.beginPath();
   ctx.moveTo(sLeft.x,  sLeft.y);

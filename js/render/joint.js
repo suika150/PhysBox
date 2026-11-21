@@ -31,7 +31,7 @@ function drawGroundStake(sx, sy) {
   ctx.beginPath();
   ctx.moveTo(sx + nx * 5, sy + ny * 5);
   ctx.lineTo(sx - nx * 7, sy - ny * 7);
-  ctx.strokeStyle = '#cfd8dc';
+  ctx.strokeStyle = isLightCanvas() ? '#607d8b' : '#cfd8dc';   // 背景に刺す釘。白い背景では濃い灰色にする
   ctx.lineWidth = 2.5;
   ctx.stroke();
   ctx.restore();

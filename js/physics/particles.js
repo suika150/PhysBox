@@ -51,6 +51,89 @@ const PARTICLE_TYPES = {
     vizAlpha: 0.9,
   },
 };
+// ── 液体の種類（水・油・食塩水）──────────────────────────────────────
+//   ★液体は型としては全部 'fluid'（SPH で動く）で、種類は粒子ごとの p.liq と、
+//     その種類のパラメータ p.prm で持つ。型を増やさないのは、'fluid' を「液体」の意味で
+//     読んでいる所（温度グラフ・一括選択・なめらか描画・濡れの判定…）がそのまま通るため。
+//   ★変えるのは「1粒が担う質量（＝密度）」と材料定数だけ。間隔・静止密度・剛性・半径は
+//     水と同じにする。この SPH の静止密度は**個数**密度（近傍の混み具合）なので、
+//     どの液体も同じ間隔で詰まり、1粒の体積は等しい＝質量は密度に比例する。
+//     多相 SPH で密度比を扱う定石（個数密度で圧力を作り、質量は粒子ごとに持つ）と同じ形。
+//     分け方は④の★（補正を質量の逆比で分ける）、浮力は _buoyancy の★（層ごとの ρ を積む）。
+//   ★圧縮のされ方（剛性）を変位の単位で揃えている＝どの液体も音速が同じ、という仮定。
+//     実物の音速は 1,300〜1,700m/s で揃ってはいないが、この SPH の音速そのものが架空
+//     （非圧縮を近似するための数値）なので、ここをいじっても物理は近づかない。
+//   ★粘性（viscosity）はこの SPH では「隣どうしの速度をならす割合」で、実物の粘度に
+//     比例させることはできない（サラダ油の粘度は水の約 60 倍だが、0.05×60 は 1 を超えて
+//     発散する）。油も水と同じ値にしてある（理由と測定は oil.viscosity の☆）。
+//   ★混ざらないこと（油と水）は、違う液体どうしの付着を弱める κ で入れる（LIQUID_TYPES の後の★。
+//     界面張力から決まる）。混ざり合う液体（食塩水と水）は κ＝1 で、分ける力は重力だけ。
+//     ただし拡散は無いので、食塩水と水の層は実物では数時間〜数日かけて境目がぼやけるところ、
+//     ここではいつまでもくっきり残る（授業の時間内なら実物も層のまま＝塩分躍層）。
+//     逆に、よく混ぜた食塩水と水がひとりでに分かれていくことも実物では起きないが、ここでは
+//     密度差でゆっくり分かれていく（拡散が無いため）。
+//   数値は 20℃ 付近の概数。密度：菜種／大豆のサラダ油 910〜920、飽和食塩水（26%）約 1,200。
+//   比熱・熱伝導率・体膨張率は文献値の幅の中ほどを取った（熱膨張は①で 40 倍に誇張される）。
+const LIQUID_TYPES = {
+  water: PARTICLE_TYPES.fluid,
+  oil: Object.assign({}, PARTICLE_TYPES.fluid, {
+    color: '#f2c14e',
+    density: 920,          // [kg/m³] サラダ油
+    viscosity: 0.05,       // ★水と同じ。実物は約60倍だが、上げると層が分かれなくなる（下の☆）
+    // ☆0.2（水の4倍）も試して撤回した。油の層の上へ水を注ぐと、水が沈んで入れ替わるはずが
+    //   30秒たっても上に残った（分離度 S＝−0.88。0.05 では −0.40 まで進む。
+    //   tools/measure-liquids.js separate --init pourHeavy）。この SPH の粘性は実物の粘度ではなく
+    //   隣どうしの速度をならす数値の量で、水の側でもすでに浮き沈みの流れを大きく鈍らせている。
+    //   そこへ足すと「油だと分かれない」という、授業で見せたいことと逆の絵になる。
+    heatCap: 1970,         // [J/(kg·K)]
+    conduct: 0.17,         // [W/(m·K)]
+    expansion: 7.0e-4,     // [1/K]
+  }),
+  brine: Object.assign({}, PARTICLE_TYPES.fluid, {
+    color: '#3f6fd8',
+    density: 1200,         // [kg/m³] 飽和食塩水（約26%）
+    viscosity: 0.05,       // 粘度は水の約 1.9 倍だが、上の★の理由で水と同じにしてある
+    heatCap: 3300,         // [J/(kg·K)]
+    conduct: 0.57,         // [W/(m·K)]
+    expansion: 4.0e-4,     // [1/K]
+  }),
+};
+const LIQUID_LABELS = { water: '水', oil: '油', brine: '食塩水' };
+// ★mrel ＝ 水に対する1粒の質量比。④・②の配分と、連成の反作用に使う。水は厳密に 1。
+// ── 違う液体どうしの「くっつき」（付着）の弱さ ──────────────────────────
+//   ★混ざらない液体（油と水）を分けているのは、密度差だけではない。水どうし・油どうしが
+//     引き合う強さ（凝集の仕事 2γ）にくらべて、油と水が引き合う強さ（付着の仕事
+//     W = γ油 + γ水 − γ油水）が弱いことが、混ざらないことそのもの。その差が界面張力 γ油水。
+//   ★この SPH の凝集（④の derr の下限 −0.5 から来る引力）は液体によらず同じ強さなので、
+//     違う液体の組の引力だけを
+//         κ = W ÷（2つの液体の凝集の平均 γ_i + γ_j）= 1 − γ_ij / (γ_i + γ_j)
+//     倍にする。同じ液体どうしは γ_ii = 0 なので κ = 1（従来どおり）。混ざり合う液体
+//     （食塩水と水）は界面張力が 0 なので κ = 1 ＝ 付着は弱まらず、分かれる力は重力だけ。
+//   ★押し返し（近接圧力・圧縮側の圧力）は付着ではないので弱めない（④）。
+//   数値（20℃・概数 [N/m]）：表面張力 水 0.072・サラダ油 0.032・飽和食塩水 0.080、
+//   界面張力 油‐水 0.025・油‐食塩水 0.030（食塩水と水は混ざるので 0）。
+//   → κ(油,水) = 0.76、κ(油,食塩水) = 0.73、κ(食塩水,水) = 1。
+//   値の効き方は SPH.update ④の★（測定）。
+const LIQUID_SURF_TENSION = { water: 0.072, oil: 0.032, brine: 0.080 };   // [N/m]
+const LIQUID_IFT = { 'oil|water': 0.025, 'brine|oil': 0.030, 'brine|water': 0 };   // [N/m]（名前の辞書順）
+for (const k in LIQUID_TYPES) {
+  const t = LIQUID_TYPES[k];
+  t.liq = k;
+  t.mrel = t.density / PARTICLE_TYPES.fluid.density;
+}
+for (const a in LIQUID_TYPES) {
+  const ta = LIQUID_TYPES[a];
+  ta.adh = {};
+  for (const b in LIQUID_TYPES) {
+    const ift = a === b ? 0 : (LIQUID_IFT[[a, b].sort().join('|')] || 0);
+    ta.adh[b] = 1 - ift / (LIQUID_SURF_TENSION[a] + LIQUID_SURF_TENSION[b]);
+  }
+}
+// シーンや UI から来た液体の名前 → パラメータ（知らない名前・__proto__ などは水に倒す）
+function liquidPrm(name) {
+  return (typeof name === 'string' && Object.prototype.hasOwnProperty.call(LIQUID_TYPES, name))
+       ? LIQUID_TYPES[name] : LIQUID_TYPES.water;
+}
 // ── 1粒子が代表する質量と熱容量 ────────────────────────────────────
 //   質量 = 密度 × 静止時に1粒子が占める面積 × 奥行き。
 //   restArea は静止させて実測した値（水槽の水面下の面積 ÷ 粒子数。幅・粒子数を
@@ -63,8 +146,8 @@ const PARTICLE_TYPES = {
 //     熱容量も同じく分子の数から出る（C = N k f/2）。奥行きにも restArea にも依らない。
 function refreshParticleThermal() {
   const k = PX2M * PX2M * world.depth;
-  for (const name in PARTICLE_TYPES) {
-    const t = PARTICLE_TYPES[name];
+  const all = Object.values(PARTICLE_TYPES).concat(Object.values(LIQUID_TYPES));
+  for (const t of all) {
     if (t.kinetic) {
       t._massKg = MOL_PER_DOT * MOL_MASS;
       t._heatC  = MOL_PER_DOT * MOL_KB * MOL_DOF / 2;   // [J/K]
@@ -76,11 +159,14 @@ function refreshParticleThermal() {
 }
 // ─── SPH Fluid/Gas Particle ──────────
 class Particle {
-  constructor(x, y, type='fluid') {
+  constructor(x, y, type='fluid', liq) {
     this.id = ++uidCounter;
     this.type = type;
-    const t = PARTICLE_TYPES[type] || PARTICLE_TYPES.fluid;
+    // ★液体は種類（liq）でパラメータを引く（LIQUID_TYPES の★）。気体は liq を持たない
+    const t = type === 'fluid' ? liquidPrm(liq || 'water')
+                               : (PARTICLE_TYPES[type] || PARTICLE_TYPES.fluid);
     this.prm = t;                  // 型パラメータ参照
+    this.liq = t.liq || null;      // 液体の種類（'water'/'oil'/'brine'）。気体は null
     this.x = x; this.y = y;
     this.px = x; this.py = y;      // 前ステップ位置
     this.vx = 0; this.vy = 0;
@@ -153,6 +239,8 @@ function serializeParticles() {
     const o = { t: p.type, x: r2(p.x), y: r2(p.y), vx: r2(p.vx), vy: r2(p.vy) };
     if (!uniform || T0 !== ROOM_K) o.T = Math.round(p.T * 100) / 100;
     if (p.color !== p.prm.color) o.c = p.color;
+    // ★液体の種類は水以外のときだけ書く（水だけのシーンのファイルは1バイトも太らない）
+    if (p.liq && p.liq !== 'water') o.l = p.liq;
     // ★軌跡は「付いているかどうか」だけ保存する。溜めた点は保存しない（物体の
     //   tracePoints と同じ扱い＝見せ方だけの一時状態で、読み込み直後は空でよい）。
     if (p.tracerEnabled) { o.tr = 1; o.tc = p.tracerColor; o.td = p.tracerDuration; }
@@ -164,7 +252,7 @@ function deserializeParticles(arr) {
   if (!Array.isArray(arr)) return out;
   for (const d of arr) {
     if (!d) continue;
-    const p = new Particle(d.x || 0, d.y || 0, d.t || d.type || 'fluid');
+    const p = new Particle(d.x || 0, d.y || 0, d.t || d.type || 'fluid', d.l);   // l 無し＝水
     p.vx = d.vx || 0; p.vy = d.vy || 0;
     p.px = p.x; p.py = p.y;
     if (d.T !== undefined) p.T = d.T;      // 無ければ既定の20℃（熱を知らない古いシーン）
@@ -182,6 +270,7 @@ const SPH_HALF_DY = [0, -1, 0, 1, 1];
 const SEG_AIR   = 0;   // 空気に面している（水面より上／開いているのに水がいない）
 const SEG_WET   = 1;   // 水に触れている＝静水圧が掛かる
 const SEG_CRACK = 2;   // 乾いているが、粒子が入れないほど狭い隙間で固体に接している
+const SEG_FILM  = 3;   // 乾いているが、上向きで真上が水面まで開いている＝空気が留まれない面（SPH.buoyFilm の★）
 const SPH = {
   h: 26,
   maxSpeed: 2000,           // [px/s]（旧500 は 1/6 重力前提。自由落下1秒で ~980 px/s に達する）
@@ -249,12 +338,58 @@ const SPH = {
   // （8 だと平均 85px/s で揺すられ続け、1 なら 33px/s。コップの静止性はどちらでも同じ）。
   coupleMaxG: 1,
   coupleWakeG: 0.05,        // これ以下の連成力では物体を起こさない（重さ比）
+  coupleGapCut: 1,          // すき間の水膜の反作用を切る：幅が粒子間隔の何倍ぶんで元に戻すか（0 で切らない＝対照。_collideBodies の★）
+  coupleTrapCut: true,      // 静止した物体・地面に押し戻された押し出しは反作用に数えない（false は対照。_collideBodies の★）
   // ── 浮力（_buoyancy 参照）──────────────────────────────────
   //   ★上限（coupleMaxG）は掛けない。浮力は ρVg で頭打ちになっている量なので、
   //     自重の1倍で切ると「水より軽いのに浮き上がれない」状態そのものになる。
   //     揺れを抑えるのは上限ではなく、下の粘性抵抗となまし（coupleTau）の役目。
   buoyZeta: 1.0,            // 浮力ばねの臨界減衰に対する比（1で振動せずに落ち着く）
   buoyAngZeta: 1.0,         // 同・回転ぶんの倍率（浮いた物体の首振りを止める）
+  buoyWaterline: true,      // 減衰のばねを「実際の水線の幅」で見積もる（false は旧来＝外形の幅。対照）
+  buoyCdCircle: 1.2,        // 水の抗力係数（円）。0 で抗力なし（対照）
+  buoyCdPoly: 2.0,          // 水の抗力係数（多角形）
+  // ── 水中の抗力は「まわりの水に対する」速度に掛ける ─────────────────────
+  //   ★抗力を物体自身の速度に掛けると、止まった水の中を動いたときしか正しくない。流れている水に
+  //     浮かべた物体は、水が動いても抵抗で止められて流されない。実測（せきを外して水を流す
+  //     チュートリアル 89。このデモは乱数を使わないので毎回同じ）：木の板が運ばれた最大の距離は
+  //     物体の速度のまま 52px（押し寄せた水に押されるぶんだけ）→ 相対速度で 196px。
+  //   ★相対速度にするのは抗力 ½ρC_d·A·v² だけ。揺れを止める減衰（水面のばねの臨界減衰）は
+  //     上下にだけ、物体自身の速度に掛ける（applySphCoupling の①）。最初は減衰も向きを問わず
+  //     相対速度にしたが、U字の舟（理論の喫水 13.9px）が 18.9 → 25.2px に沈み込んだ
+  //     （波立つ水の速さで上下の減衰を掛けると、波に揺すられる）。上下だけ・物体の速度にして 18.1px。
+  //     減衰を水平にも（物体の速度で）掛けると、浮いた木が流れに逆らって止まる（運ばれる距離 11〜19px）。
+  //   ★水の速さは物体から離した環（外接矩形から 3〜6 粒子間隔）の粒の平均で読み、0.2 秒でならす。
+  //     すぐ脇の水は物体と一緒に動く（押しのけられ、引きずられる）ので、そこで読むと相対速度が
+  //     0 に寄って抵抗が消える。ならすのは SPH の水のゆらぎ（静止した水で ±3px/s）を落とすため。
+  //     実測（水だけのコップ・76×40px の箱が沈む速さ。理論の終端速度 1100 で 62.6・2000 で 198px/s）：
+  //         脇の帯（0〜2.5 間隔）で読む        1100 で 172.9px/s／2000 で 317.1px/s（抵抗が効かない）
+  //     （括弧の中は、せきの奥の水が 15 段だったころの 89 で木の板が運ばれた距離。反作用を返す設定）
+  //         環（3〜6 間隔）・ならし 0.04 秒     53.7（139px）
+  //         環（3〜6 間隔）・ならし 0.2 秒（現在）56.3（169px）
+  //         環（3〜6 間隔）・ならし 0.5 秒      59.4（71px。流れへの追従が遅れる）
+  //         物体の速度のまま（旧）             59.1（5px）
+  //     相対速度にすると理論より少し遅く沈む。沈む箱に押しのけられて上へ回り込む水を環が拾うため
+  //     （実物の抗力係数はその回り込みも込みの値なので、二重に数えている）。
+  //   ☆抗力の反作用（力積）を水へ返す仕組みはあるが、既定では切ってある（buoyFlowReact）。
+  //     返すときは、外接矩形から 2 粒子間隔までの粒へ等分する（次の _buoyancy で、物体が受けた力積の
+  //     逆を粒の質量で割って速度に足す）。運動量の保存としてはこちらが正しいが、この SPH の水は
+  //     揺れの減り方が弱く、もらった運動量がいつまでも残る。実測（浮力デモ・900tick 落ち着かせて
+  //     400tick 平均）：返すと木 400 の沈み具合が 6.3%（理論 40%）＝落ちたブロックの勢いで水が
+  //     揺れ続けていて、3600tick 待つと 39.2% に戻る。返さなければ 900tick で 39.9%。
+  //     返さないぶん、抗力は水の運動量を消す（水が物体を引きずらない）。底の円が跳ねるのも、
+  //     返すときのほうが目立った（乱数1つで、底からの高さ 1.3 → 3.8px）。
+  //   ☆環に粒が1つも無いとき（水面から出ている・壁ぎわの狭いところ）は、前の値をそのまま使う。
+  //   ☆回転の抵抗は水の渦を見ず、物体の角速度のままに掛けている。
+  //   ☆流れの場（FlowField）は物体にしか効かず、水の粒を動かさない。
+  buoyRelFlow: true,        // 抗力を「まわりの水との相対速度」に掛ける（false は対照＝物体の速度のまま）
+  buoyFlowIn: 3,            // [粒子間隔] まわりの水の速さを読む環の内側（外接矩形からの距離）
+  buoyFlowPad: 6,           // [粒子間隔] 同・外側
+  buoyDampVert: true,       // 揺れを止める減衰を上下にだけ掛ける（false は水平にも）
+  buoyFlowTau: 0.2,         // [s] まわりの水の速さのなまし時定数（水のゆらぎを落とし、流れだけを残す。SPH.buoyRelFlow の★）
+  buoyReactPad: 2,          // [粒子間隔] 抵抗の反作用を返す帯（外接矩形からこの距離まで）
+  buoyFlowReact: false,     // 抗力の反作用を水へ返す（既定は返さない。SPH.buoyRelFlow の☆）
+  buoyDragMid: true,        // 粘性抵抗を「位置を進めた速度」に掛ける（false は対照。applySphCoupling の★）
   //   ★なましは連成（0.10s）より短くする。浮力は「押し出しの回数」ではなく水面の高さから
   //     決まる幾何量なので、もともと滑らかで長くなます必要がない。むしろ軽い物体では
   //     固有周期（スポンジで 0.09秒）に近い遅れが煽りになる。
@@ -262,6 +397,9 @@ const SPH = {
   buoySegPx: 6,             // [px] 表面を刻む長さ（細かいほど正確・重い）
   buoyProbe: 4,             // [px] 「濡れているか」を見る点を、面からどれだけ外に取るか
   buoyLevelPool: true,      // 水面をひとつながりの水の静水面で決める（false は旧来＝対照）
+  buoySubWet: true,         // 水面下にまるごと沈んだ物体は、乾いて見える面片も濡れとして扱う（false で対照）
+  buoyLevelSkip: 0,         // 静水面を読むとき、動く物体の外接矩形から何列ぶんを除くか（−1 で除かない＝対照）
+  buoyLevelSkipSub: 2,      // 水面下に沈んだ物体のまわりは、さらに何列ぶん除くか（0 で広げない＝対照）
   buoyLevelPad: 1,          // 水面を見る列を物体の幅からどれだけ外へ広げるか（列数）
   buoyWet: 9,               // [px] この距離に水粒子がいれば濡れているとみなす（粒子間隔 11px）
   // ── 接している面にも水は入り込む（狭い隙間ごしに濡れを伝える）──────────────
@@ -299,6 +437,62 @@ const SPH = {
   buoyCrack: 12,            // [px] この距離に固体があれば「水が入れない狭い隙間」とみなす
                             //   （粒子間隔 11.2px。0 で機能OFF＝対照用）
   buoyCrackChain: true,     // 濡れた面からつながった隙間だけ濡らす（false は対照。上の★）
+  // ── 水面の下で上向きに開いた面も濡れている（薄い水膜・解像度の穴の2つめ）──────────
+  //   ★沈めた物体の上面が水面から粒子1個ぶん（11.2px）より浅いと、その上に粒子が乗れず
+  //     上面が「乾き」になる。すると上面の水圧が消えて浮力が ρg(h+d)w に膨らみ、
+  //     上面の深さ d = h(ρ物/ρ水 − 1) のところで釣り合ってしまう（1100 なら 4px）。
+  //     実測（水だけのコップ・76×40px の箱・乱数固定。底から箱の底までの高さ）：
+  //     1020/1050/1100/1150 は 30秒たっても 139/138/136/129px＝水面のすぐ下に浮いたまま。
+  //     1200 は 30秒近く浮いてからようやく沈む。油と水の層では、その間で止まるはずの箱が
+  //     界面まで沈まない（950：界面より下 理論 37.5% → 0%）。
+  //   ★現実の水では、上向きの面に空気は留まれない（空気は軽いので真上へ抜けて、水が入る）。
+  //     空気が残るのは、真上を固体がふさいでいるとき（潜水鐘・物の下）だけ。そこで
+  //     「乾いていて、まわりも開いていて、水面より下で、上向きで、**真上が水面まで固体に
+  //     当たらずに抜ける**」面片を SEG_FILM とし、隙間（SEG_CRACK）と同じく
+  //     **濡れた面片から輪の上でつながっている間だけ**濡らす（_buoyancy の②）。
+  //   ★つながりの条件は外せない。浮いた舟の内側の床は、上向きで真上も開いていて水面より
+  //     下にあるが、乾いているのが正しい。輪をたどると縁（水面より上＝空気）と内壁
+  //     （鉛直＝上向きでない）で切れるので、外側の濡れは床まで届かない。
+  //     地面に置いたコップの外壁も鉛直なので切れる（外底の隙間に濡れが回り込まない）。
+  //   ☆先に「水面から粒子1個ぶんより浅い上向きの面」だけを濡らす形を試したが、足りなかった。
+  //     上面が 11px より深くなると再び乾き、そこで止まる（1050〜1200 がどれも底から
+  //     126〜129px で止まった）。粒子はもっと深くても上面になかなか流れ込まない
+  //     （2粒子ぶんまで広げても 1100 が底に着くのに 18.5秒、深さを限らないと 16.3秒）。
+  //     ＝深さで切る理由が無いので、真上が開いているかで決めることにした。
+  //   ★これだけでは 1020〜1050 が沈み切らなかった。もう1つの原因は粘性抵抗の読む速度で、
+  //     静止した物体でも抵抗が上向きに ω·dt_sub·W（76×40px の箱で 2%W）を出し続けていた。
+  //     同じ日に applySphCoupling の★で直した（SPH.buoyDragMid）。2つは**両方そろって効く**：
+  //     抵抗だけ直して濡れを直さないと、1020/1050 は 138px で止まったまま（浮力 1.00W＝
+  //     乾いた上面が過大な浮力を出して支える）。
+  //   ★実測（乱数固定。水だけのコップ。底に着くまでの時刻／30秒後の底からの高さ）：
+  //         密度              1020     1050     1100    1150    1200    1500   2000
+  //         直す前           139px    138px    136px   129px   30秒後に沈みかけ  3.8s  2.3s
+  //         濡れだけ直す     123px    31px     16.3s   10.4s   7.7s    3.4s   2.1s
+  //         ＋抵抗の速度      57px※   24.8s    13.1s   8.9s    6.9s    3.3s   2.0s
+  //         ＋抗力            4.1s     3.2s     2.5s    —       2.0s    1.5s   1.2s
+  //         ＋水に対する相対速度（現在） 4.4s  3.3s  2.6s   —       2.0s    1.5s   1.2s
+  //     ※1020 は毎秒 1.9px で沈み続けている途中だった（当時の臨界減衰で決まる終端速度
+  //       1.96px/s）。同じ日に抵抗を ½ρC_d·A·v² の抗力へ置き換えた（_buoyancy の減衰の★）。
+  //     底に着いた箱の浮力は 0.909/0.870/0.833W ＝理論の ρ水/ρ物 と一致（直す前は、浮いた
+  //     まま 0.98W。足りない 2% は抵抗の見かけの力が埋めていた）。
+  //   ★ほかへの影響（乱数固定・時間平均。tools/measure-buoyancy.js both と measure-liquids.js sink）。
+  //     同じ日の変更（濡れ・抵抗の速度・抗力・挟まった粒子・水に対する相対速度）をすべて入れた
+  //     あとの値。☆1回ずつの値は、計算の順序や前に回したシーンの残りだけで数ポイント動く
+  //     （SPH が初期値に敏感なため）。例：油に浮かべた 400 の箱は、単独で回すと 46.9%、
+  //     measure-liquids の続きで回すと 35.0%（理論 43.5%）。下の値は傾向として読むこと：
+  //     ・1個ずつ（200〜1500）：22.2/41.3/61.2/81.5/97.9/100/100 → 22.3/42.5/57.6/79.1/100/100/100%
+  //       （平均誤差 1.2 → 1.2 ポイント）。浮力の時間平均は、密度200 で 0.952 → 1.000W、600 で
+  //       0.974 → 0.999W（抵抗の速度を直した段で測った値）＝エンジン自身の浮力と釣り合う。
+  //       直す前は抵抗の見かけの力が持ち上げていた。1000 は水中に漂い、向きが定まらない（傾き 57°）。
+  //     ・浮力デモ（400/1000/2000）：36.2/95.5/100 → 39.9/100/100%（理論 40/100/100）。
+  //     ・油の上・水の下の層（界面より下の割合）：950 は 0 → 38.9%、980 は 20.6 → 76.5%
+  //       （理論 37.5/75%）。
+  //     ・浮いた舟（U字・壁 4px・密度 2000）：内側の床は水面より 14px 下だが、濡れず沈まない。
+  //       喫水 18.3px（理論 13.9px。直す前 18.7px）。
+  //       地面に置いた動くコップ（密度 600、水 120px／縁の 5px 下まで）：静止率 1.000。
+  //       最大上昇は 0.0px／0.29px（縁の近くまで入れたほう。直す前は 0.0px）。
+  buoyFilm: true,           // 真上が水面まで開いた上向きの面を、濡れからつながる限り濡らす（false は対照）
+  buoyFilmCos: 0,           // 「上向き」の判定：外向き法線と上向きの内積がこれより大きい面
   // [px] 熱の「触れている」判定の余裕（粒子の半径に足す）。_collideBodies の★を参照
   thermalTouchPad: 4,
   // ── はさまれた粒子を横へ逃がす歩幅（粒子の半径に対する比。_squeezeOut 参照）──
@@ -377,7 +571,7 @@ const SPH = {
   _wcn: 0,
   // 浮力の面片の置き場（毎tick 物体ごとに使い回す。中点・外向き法線・長さ・深さ・状態・輪）
   _segMx: [], _segMy: [], _segNx: [], _segNy: [], _segDs: [], _segDp: [],
-  _segSt: [], _segLoop: [],
+  _segSt: [], _segLoop: [], _segRd: [],   // _segRd＝層のとき ∫ρdz [kg/m³·px]
   // 面の候補を1つ差し出す。同じ向きなら近いほうを残し、違う向きなら別枠で持つ
   _offerSurface(p, qx, qy, d) {
     const nx = p.x - qx, ny = p.y - qy;
@@ -636,8 +830,16 @@ const SPH = {
           const a = 1 - r/h;
           const kv = (pi.prm.viscosity + pj.prm.viscosity) * 0.5 * a * 0.5;
           const dvx = (pj.vx-pi.vx)*kv, dvy = (pj.vy-pi.vy)*kv;
-          pi.vx += dvx; pi.vy += dvy;
-          pj.vx -= dvx; pj.vy -= dvy;
+          if (pi.prm === pj.prm) {                  // 同じ液体＝同じ質量（従来と1ビットも同じ）
+            pi.vx += dvx; pi.vy += dvy;
+            pj.vx -= dvx; pj.vy -= dvy;
+          } else {
+            // ★質量の違う2粒は、速度の変化を質量の逆比で分ける（運動量 m_i·Δv_i = −m_j·Δv_j）。
+            //   等質量なら両方 1 倍＝上の式。④の★と同じ理屈
+            const mi = pi.prm.mrel, mj = pj.prm.mrel, s = 2 / (mi + mj);
+            pi.vx += dvx*mj*s; pi.vy += dvy*mj*s;
+            pj.vx -= dvx*mi*s; pj.vy -= dvy*mi*s;
+          }
           // ══ 粘性の散逸を熱にしてはいけない（試して撤回した。繰り返さないこと）══
           //   この平滑化は運動量を保つが運動エネルギーは必ず減り、等質量なら
           //       ΔE = −m·kv·(1−kv)·|相対速度|²
@@ -730,12 +932,24 @@ const SPH = {
           if (r2 >= h2 || r2 < 1e-12) continue;    // ★ r<1e-6 ⇔ r²<1e-12
           const r = Math.sqrt(r2);
           const a = 1 - r/h;
-          let D = dt2 * (P*a + PN*a*a);
+          // ★違う液体の組は、引き合う側（P<0）だけ付着の比 κ を掛ける（LIQUID_TYPES の後の★）
+          const Pij = (P < 0 && t !== pj.prm) ? P * t.adh[pj.prm.liq] : P;
+          let D = dt2 * (Pij*a + PN*a*a);
           if (D >  4) D =  4;          // 爆発防止クランプ
           if (D < -2) D = -2;
           const ux = dx/r, uy = dy/r;
-          pi.x -= D*ux*0.5; pi.y -= D*uy*0.5;
-          pj.x += D*ux*0.5; pj.y += D*uy*0.5;
+          // ★補正を質量の逆比で分ける：軽い粒ほど大きく動く（m_i·Δx_i = −m_j·Δx_j＝運動量保存）。
+          //   これが液体どうしの浮力そのもの。重力はどの粒にも同じ加速度 g で掛かるので、
+          //   重い水の柱を支えるだけの押し合いが、油の粒には ρ水/ρ油 倍の加速度として効き、
+          //   差し引き g(ρ水−ρ油)/ρ油 で上がっていく（アルキメデス）。分けを 0.5 のままに
+          //   すると油は水と同じに振る舞い、層は分かれない（下の測定の対照がそれ）。
+          //   同じ液体どうしは従来の 0.5 そのまま＝水だけのシーンは1ビットも変わらない。
+          //   ※thermal.js 冒頭の「0.5 は全粒子が同質量の前提」は、ここで外した。
+          let wi = 0.5;
+          if (t !== pj.prm) wi = pj.prm.mrel / (t.mrel + pj.prm.mrel);
+          const wj = 1 - wi;
+          pi.x -= D*ux*wi; pi.y -= D*uy*wi;
+          pj.x += D*ux*wj; pj.y += D*uy*wj;
         }
         // ★鏡像ぶんの変位。鏡像は動かないので実体が**全部**受け取る（対等な2粒子の 0.5 ではない）。
         //   鏡像は壁の向こう＝法線の逆側にいるので、押し返しは +法線の向きになる。
@@ -787,7 +1001,7 @@ const SPH = {
       }
       p.vx = vx; p.vy = vy;
     }
-    this._buoyancy(pts);        // ★浮力（静水圧のぶん）。押し出しの反作用では出ない
+    this._buoyancy(pts, dt);    // ★浮力（静水圧のぶん）。押し出しの反作用では出ない
     this._finishCoupling(dt);   // ★積んだ反作用をなまして物体へ渡す
   },
   // ── 浮力（アルキメデス）────────────────────────────────────────
@@ -844,6 +1058,24 @@ const SPH = {
     }
     return false;
   },
+  // その点から真上へ水面 level まで、固体（物体・地面。自分自身も含む）に当たらずに抜けるか。
+  //   ★半間隔ごとに見る（SPH.buoyFilm の★）。半間隔より薄い固体は抜けうるが、そんな板の下の水は
+  //     板の上の水とほとんど同じ高さ＝濡れと見て圧力の誤差は小さい。
+  _openAbove(x, y, level, ux, uy, sp) {
+    const terrain = world.terrain && ground.layers !== 0;
+    const step = sp / 2;
+    for (let t = step; (x + ux*t)*ux + (y + uy*t)*uy < level; t += step) {
+      const px = x + ux*t, py = y + uy*t;
+      if (terrain && signedDistToGround(px, py) < 0) return false;
+      for (const o of objects) {
+        if (_ghostBody(o)) continue;
+        const a = o._aabb;
+        if (px < a.minX || px > a.maxX || py < a.minY || py > a.maxY) continue;
+        if (o.containsPoint(px, py)) return false;
+      }
+    }
+    return true;
+  },
   // 物体の輪郭を短い面片に刻んで渡す（中点・外向き法線・長さ・輪の番号）。
   //   円は円周を等分、多角形は外周と穴のそれぞれの辺を刻む。
   //   外向きの判定は「少し外へ出た点が物体の中でないか」で行う（回り方に依らない）。
@@ -888,7 +1120,66 @@ const SPH = {
       }
     }
   },
-  _buoyancy(pts) {
+  // ── 層になった液体の「高さ → 密度」の表（かたまりごと）──────────────
+  //   高さを粒子間隔 sp ごとの段に切り、段ごとにいる粒子の密度を平均する。
+  //   ★段の値は「その高さにいる液体の密度」で、液体の量ではない。水面の段は粒が疎らでも
+  //     その液体の ρ になる（積分は水面から下だけを取るので、上の空きは数えない）。
+  //   ★粒のいない段（物体の真横にしか液体が無い高さで、たまたま空いた段など）は下の段の
+  //     値を引き継ぐ。いちばん下が空なら最初に見つかった値で埋める。
+  //   ★C[k] は段 k の下端から上全部の ∫ρdz [kg/m³·px]。F(h) はそこから段の中を一次で補う。
+  _layerProfile(pts, ux, uy, rx, ry, smin, cw, nCol, runOf, nRun, sp) {
+    let hmin = Infinity, hmax = -Infinity;
+    for (const p of pts) {
+      if (p.type !== 'fluid') continue;
+      const hg = p.x*ux + p.y*uy;
+      if (hg < hmin) hmin = hg;
+      if (hg > hmax) hmax = hg;
+    }
+    const nBin = Math.min(4096, Math.max(1, Math.ceil((hmax - hmin)/sp) + 1));
+    const N = nRun * nBin;
+    const L = this._lay || (this._lay = {});
+    if (!L.sum || L.sum.length < N) { L.sum = new Float64Array(N); L.cnt = new Int32Array(N); }
+    if (!L.C || L.C.length < N + nRun) L.C = new Float64Array(N + nRun);
+    const sum = L.sum, cnt = L.cnt, C = L.C;
+    sum.fill(0, 0, N); cnt.fill(0, 0, N);
+    for (const p of pts) {
+      if (p.type !== 'fluid') continue;
+      const i = Math.min(nCol-1, Math.max(0, ((p.x*rx + p.y*ry) - smin)/cw | 0));
+      const r = runOf[i];
+      if (r < 0) continue;
+      const k = Math.min(nBin-1, ((p.x*ux + p.y*uy) - hmin)/sp | 0);
+      sum[r*nBin + k] += p.prm.density; cnt[r*nBin + k]++;
+    }
+    for (let r = 0; r < nRun; r++) {
+      const o = r*nBin;
+      let first = 0;
+      for (let k = 0; k < nBin; k++) if (cnt[o+k]) { first = sum[o+k] / cnt[o+k]; break; }
+      let prev = first;
+      for (let k = 0; k < nBin; k++) {                // sum を「段の密度」に置き換える
+        const v = cnt[o+k] ? sum[o+k] / cnt[o+k] : prev;
+        sum[o+k] = v; prev = v;
+      }
+      const c0 = r*(nBin + 1);                          // C は1かたまり nBin+1 個
+      C[c0 + nBin] = 0;
+      for (let k = nBin - 1; k >= 0; k--) C[c0 + k] = C[c0 + k + 1] + sum[o+k] * sp;
+    }
+    L.nBin = nBin; L.hmin = hmin; L.sp = sp;
+    return L;
+  },
+  // 高さ h より上（表の上端まで）の ∫ρdz。差を取って P = g(F(h) − F(水面)) にする
+  _layerF(L, r, h) {
+    const nBin = L.nBin, sp = L.sp, o = r*nBin, c0 = r*(nBin + 1);
+    const u = (h - L.hmin) / sp;
+    if (u >= nBin) return 0;
+    if (u < 0) return L.C[c0] + L.sum[o] * (-u) * sp;   // 表より下は最下段の密度で延ばす
+    const k = u | 0;
+    return L.C[c0 + k + 1] + L.sum[o + k] * (k + 1 - u) * sp;
+  },
+  _layerRho(L, r, h) {
+    const k = Math.min(L.nBin - 1, Math.max(0, ((h - L.hmin) / L.sp) | 0));
+    return L.sum[r*L.nBin + k];
+  },
+  _buoyancy(pts, dt) {
     const gx = gravPxX(), gy = gravPxY();
     const gl = len(gx, gy);
     if (gl < 1e-6) return;                       // 無重力では浮力も定義されない
@@ -918,15 +1209,20 @@ const SPH = {
       if (hgt > top[i]) top[i] = hgt;
     }
     // ── 静水面：ひとつながりの水の、上が空いている列だけで平均する ──
-    let runOf = null, runSum = null, runN = null;
+    let runOf = null, runSum = null, runN = null, runSA = null, runNA = null, nRun = 0;
+    let colLvA = null;                           // 列ごとの水の上面（上が塞がれた列は NaN）
     if (pool) {
       runOf  = this._surfRun  && this._surfRun.length  === nCol ? this._surfRun  : (this._surfRun  = new Int32Array(nCol));
       runSum = this._surfRunS && this._surfRunS.length === nCol ? this._surfRunS : (this._surfRunS = new Float64Array(nCol));
       runN   = this._surfRunN && this._surfRunN.length === nCol ? this._surfRunN : (this._surfRunN = new Int32Array(nCol));
+      runSA  = this._surfRunSA && this._surfRunSA.length === nCol ? this._surfRunSA : (this._surfRunSA = new Float64Array(nCol));
+      runNA  = this._surfRunNA && this._surfRunNA.length === nCol ? this._surfRunNA : (this._surfRunNA = new Int32Array(nCol));
+      colLvA = this._surfColLvA && this._surfColLvA.length === nCol ? this._surfColLvA : (this._surfColLvA = new Float64Array(nCol));
+      colLvA.fill(NaN);
       let r = -1, prevWet = false;
       for (let i = 0; i < nCol; i++) {
         if (top[i] === -Infinity) { runOf[i] = -1; prevWet = false; continue; }
-        if (!prevWet) { r++; runSum[r] = 0; runN[r] = 0; }
+        if (!prevWet) { r++; runSum[r] = 0; runN[r] = 0; runSA[r] = 0; runNA[r] = 0; }
         prevWet = true;
         runOf[i] = r;
         // 最上の粒子の、粒子1個ぶん上が固体なら水面ではない（浮いた物体の下・蓋の下の水）
@@ -940,12 +1236,60 @@ const SPH = {
           if (o.containsPoint(qx, qy)) { covered = true; break; }
         }
         if (covered) continue;
-        runSum[r] += top[i] + sp/2;              // 粒子の中心＋半間隔＝水の上面
-        runN[r]++;
+        const lvI = top[i] + sp/2;               // 粒子の中心＋半間隔＝水の上面
+        runSA[r] += lvI; runNA[r]++; colLvA[i] = lvI;
       }
+      nRun = r + 1;
+      // ★動く物体の外接矩形 ± buoyLevelSkip 列には印をつけ、静水面の平均から外す（下の★）。
+      //   水面下に沈んだ物体は buoyLevelSkipSub 列ぶん広く外す（上と脇に水が盛り上がる）
+      const skip = this.buoyLevelSkip, skipSub = this.buoyLevelSkipSub;
+      const mask = this._surfMask && this._surfMask.length === nCol ? this._surfMask : (this._surfMask = new Uint8Array(nCol));
+      mask.fill(0);
+      if (skip >= 0) for (const o of objects) {
+        if (o.isStatic || o.invMass === 0 || _ghostBody(o)) continue;
+        const a = o._aabb;
+        let lo = Infinity, hi = -Infinity, oTop = -Infinity;
+        for (const [qx, qy] of [[a.minX,a.minY],[a.maxX,a.minY],[a.minX,a.maxY],[a.maxX,a.maxY]]) {
+          const s = qx*rx + qy*ry, h = qx*ux + qy*uy;
+          if (s < lo) lo = s;
+          if (s > hi) hi = s;
+          if (h > oTop) oTop = h;
+        }
+        let m = skip;
+        if (skipSub > 0) {                       // 物体がまたぐかたまりの、仮の水面（全列の平均）より上面が低いか
+          const j0 = Math.max(0, Math.floor((lo - smin)/cw)), j1 = Math.min(nCol-1, Math.floor((hi - smin)/cw));
+          let ls = 0, ln = 0, last = -1;
+          for (let j = j0; j <= j1; j++) { const rr = runOf[j]; if (rr < 0 || rr === last) continue; last = rr; ls += runSA[rr]; ln += runNA[rr]; }
+          if (ln && oTop < ls / ln) m += skipSub;
+        }
+        const k0 = Math.max(0, Math.floor((lo - m*cw - smin)/cw)), k1 = Math.min(nCol-1, Math.floor((hi + m*cw - smin)/cw));
+        for (let k = k0; k <= k1; k++) mask[k] = 1;
+      }
+      for (let i = 0; i < nCol; i++) {
+        if (mask[i] || Number.isNaN(colLvA[i])) continue;
+        const rr = runOf[i];
+        runSum[rr] += colLvA[i]; runN[rr]++;
+      }
+      // 印のない列が1本も無いかたまり（狭い水槽・物体が水面を覆いつくしている）は、印の列も使う
+      for (let k = 0; k < nRun; k++) if (!runN[k]) { runSum[k] = runSA[k]; runN[k] = runNA[k]; }
     }
     this._buildGrid(pts);          // 押し出しで粒子が動いたあとの配置で「濡れ」を見る
-    const rho = PARTICLE_TYPES.fluid.density;
+    // ── 液体が1種類か、層になっているか ──
+    //   ★1種類なら P = ρgd（ρ はその液体の密度）。水だけのシーンは従来と1ビットも同じ式を通る。
+    //   ★2種類以上なら、かたまりごとに「高さ → 密度」の表を作り、P(h) = g∫_h^水面 ρ(z)dz を積む。
+    //     面ごとに静水圧を積む今の形はそのままで、圧力の式だけが層の重みの和になる。
+    //     沈めた物体なら差し引き g∫ρ(z)dV ＝ 押しのけた液体の重さ（層をまたいでも
+    //     アルキメデス）。油の層に浮く物体は油の密度で、境目にまたがる物体は
+    //     上を油・下を水に押されて、ちょうど境目で止まる。
+    //   ☆表はかたまり（ひとつながりの列）ごとで、列ごとではない。静止した液体の層は
+    //     水平なので同じ高さなら同じ密度、という前提。波立った層の傾きは平均される。
+    let rho = 0, mixed = false;
+    for (const p of pts) {
+      if (p.type !== 'fluid') continue;
+      if (!rho) rho = p.prm.density;
+      else if (p.prm.density !== rho) { mixed = true; break; }
+    }
+    const prof = (mixed && pool && nRun > 0) ? this._layerProfile(pts, ux, uy, rx, ry, smin, cw, nCol, runOf, nRun, sp) : null;
     for (const b of objects) {
       if (b.isStatic || b.held || b.invMass === 0) continue;
       const a = b._aabb;
@@ -984,14 +1328,48 @@ const SPH = {
       //       せいだと読んでいたが、重力を直すと 39.9% になった＝少なくとも大半は積分の漏れで、
       //       水面の見積もりのせいではなかった。脇の列を除く案（34.4 / 36.9 / 41.0%）は、
       //       物差しと同じ列を読ませるだけなので入れていない。
+      //   ★2026-11-20 に、**動く物体の真上の列**（外接矩形にかかる列。SPH.buoyLevelSkip 列ぶん
+      //     広げられる）は静水面の平均から外すことにした。自分の上だけでなく、ほかの物体の上も外す。
+      //     物体の上の水は静水面ではない：水面のすぐ下に漂う中性浮力の箱の上には、押し出された水が
+      //     10〜17px 盛り上がっていた。自分の上だけ外すと、3つ並べたデモで木（400）が隣の箱の上の
+      //     盛り上がりを水面として読み、29.7% まで浮いた。かたまりの列が全部外れるとき（狭い水槽・
+      //     物体が水面を覆いつくす）は外さない。
+      //     実測（新しいほかの変更はすべて入れた状態・buoyLevelSkipSub=0。900tick 落ち着かせ・300〜400tick 平均）：
+      //       SPH.buoyLevelSkip                    −1(外さない)   0(現在)   1      2
+      //       measure-buoyancy 1個ずつの平均誤差     1.1           0.3      0.6    0.5  ポイント
+      //       浮力デモの木 400（理論 40）            42.2          36.1     35.6   27.9 %
+      //       measure-liquids 水・油の1個ずつ        2.08          0.58     —      —    ポイント（|差| の平均、8条件）
+      //     どの条件でも、エンジン自身の水面から測れば理論と 0.3 ポイント以内（浮力は 1.000W で釣り合う）＝
+      //     ずれは水面の読み方だけ。
+      //   ★同じ日に、**水面下に沈んだ物体**（上面が、そのかたまりの仮の水面＝全列の平均より低い）の
+      //     まわりは SPH.buoyLevelSkipSub 列ぶん広く外すことにした。浮力デモの木 400 が 36% と浅かったのは、
+      //     水面すぐ下に漂う中性浮力の箱（1000）の上だけでなく、**脇の 1〜2 列**にも水が 3〜6px 盛り上がって
+      //     いて（時間平均の水面：箱の脇 −213〜−215px、木のまわり −205〜−209px）、それを静水面に混ぜていた
+      //     ため。水面を貫いて浮く物体の脇は逆に低いので（1 列外すと 1 個ずつの箱が 2 ポイント浅くなる）、
+      //     広げるのは沈んだ物体だけ。沈んだ物体の上の水は、圧力の一様なずれとして全周で打ち消すので、
+      //     まるごと沈んだ物体の浮力そのものはこの印で変わらない（変わるのは隣で浮く物体）。
+      //     実測（浮力デモ、木と中央の箱の置き方を 6 通りずらす。900tick 落ち着かせ・400tick 平均。
+      //     G＝コップ全体の物差し、L＝木の脇 1〜5 列の物差し）：
+      //       SPH.buoyLevelSkipSub        0（対照）   1      2（現在）  3
+      //       木 400（理論 40）  G        36.6        38.0   39.9      42.2 %
+      //                          L        35.6        37.3   38.9      40.3 %
+      //     measure-buoyancy：デモ 36.1 → 40.3%、1個ずつの平均誤差 0.3 → 0.3。底での傾き・円の跳ね・
+      //     舟の喫水・沈む速さは変わらない。
+      //     ☆没：物体に近い列ほど重く読む（ガウス重み・幅 6 列）。デモの木は 41% になったが、物体の脇の
+      //       盛り上がり・くぼみを拾い直して、底での傾き 2.5° → 20°、水・油の1個ずつ 0.58 → 1.35 ポイント、
+      //       層の 980 が 74 → 83%（理論 75）に崩れた。
+      //     なお「油の 900 が 89.8%（理論 97.8）」と出ていたのは物差しの誤りだった（箱が横へ流れて、
+      //     固定の帯 x=±60 の外にいる箱の下の水を水面として読んでいた。measure-liquids.js の★）。
       //   ☆限界：かたまりは1つの水面を持つので、浮いたコップの中と外の水面が違うときは
       //     混ざる（旧来も同じ）。上の空いた列が無いとき（蓋の下の水）は旧来の見積もりに戻る。
-      let lvSum = 0, lvN = 0;
+      let lvSum = 0, lvN = 0, runB = -1;         // runB＝層の表を引くかたまり（いちばん広いもの）
       if (pool) {
         let last = -1;                           // 物体がまたぐ水のかたまり（2つ以上もありうる）
         for (let i = i0; i <= i1; i++) {
           const r = runOf[i];
-          if (r < 0 || r === last) continue;
+          if (r < 0) continue;
+          if (runB < 0 || runNA[r] > runNA[runB]) runB = r;
+          if (r === last) continue;
           last = r; lvSum += runSum[r]; lvN += runN[r];
         }
       }
@@ -1000,6 +1378,10 @@ const SPH = {
       }
       if (!lvN) continue;                        // まわりに水が無い
       const level = lvSum / lvN;
+      // 層のときだけ：水面より上の積分 F(水面) を先に引いておく（面ごとに F(h) − F(水面)）
+      const lay = prof && runB >= 0 ? prof : null;
+      const Flv = lay ? this._layerF(lay, runB, level) : 0;
+      const rdA = this._segRd; rdA.length = 0;
       // ── 表面にかかる静水圧を足し合わせる ──
       //   ★「沈んでいる体積 × ρg」で出してはいけない。それだと水を入れたコップの壁まで
       //     浮力を受けてしまい、コップが自分の水で浮き上がる（実測：地面に置いたコップが
@@ -1029,13 +1411,31 @@ const SPH = {
         const st = depth <= 0                      ? SEG_AIR   // 水面より上＝空気
                  : this._fluidNear(qx, qy)         ? SEG_WET
                  : this.buoyCrack > 0 && this._solidNear(mx, my, nxo, nyo, b) ? SEG_CRACK
+                 : this.buoyFilm && nxo*ux + nyo*uy > this.buoyFilmCos
+                   && this._openAbove(qx, qy, level, ux, uy, sp) ? SEG_FILM
                  : SEG_AIR;                        // 乾いていて、まわりも開いている
         mxA.push(mx); myA.push(my); nxA.push(nxo); nyA.push(nyo);
         dsA.push(ds); dpA.push(depth); stA.push(st); lpA.push(loop);
+        if (lay) rdA.push(this._layerF(lay, runB, mx*ux + my*uy) - Flv);
       });
       // ── ② 濡れを「狭い隙間」ごしに隣へ伝える（SPH.buoyCrack の★）──
       const nSeg = stA.length;
-      if (this.buoyCrack > 0) for (let s0 = 0; s0 < nSeg; ) {
+      // ★外形がまるごと水面より下にあり、どこか1か所でも水に触れているなら、乾いて見える面片も
+      //   隙間ごしに濡らす候補にする（SPH.buoySubWet。輪ごとに②の連鎖で伝わる）。
+      //   この系に空気の相は無いので、水面より下の「乾いた所」は粒子の並びの隙間にすぎない。
+      //   入水の 0.2 秒ほど、上面の片側だけが濡れてもう片側が乾いたまま（片側 34px）になり、
+      //   静水圧なら 0 のはずのトルクが出ていた。水中では抗力が速さの2乗なので、遅い回転は
+      //   ほとんど減らずに残り、中性浮力の箱が 10 秒かけて縦に回っていた。
+      //   実測（水だけのコップ・76×40 の密度1000 の箱を平らに落とす・落とす x を 7 通り）：
+      //     入水で受けた回転の最大 0.113 → 0.010 rad/s。底での傾き（1500〜1800tick の平均）は
+      //     下の SPH.coupleGapCut と合わせて 50.2° → 2.5°（片方だけだと 19.9° / 44.3°）。
+      //   内側の輪（穴）は外の輪とは別に連鎖するので、閉じた空洞の中までは濡らさない。
+      if (this.buoySubWet) {
+        let below = nSeg > 0, anyWet = false;
+        for (let i = 0; i < nSeg; i++) { if (dpA[i] <= 0) below = false; if (stA[i] === SEG_WET) anyWet = true; }
+        if (below && anyWet) for (let i = 0; i < nSeg; i++) if (stA[i] === SEG_AIR) stA[i] = SEG_FILM;
+      }
+      if (this.buoyCrack > 0 || this.buoyFilm || this.buoySubWet) for (let s0 = 0; s0 < nSeg; ) {
         let e0 = s0 + 1;
         while (e0 < nSeg && lpA[e0] === lpA[s0]) e0++;
         const n = e0 - s0;
@@ -1045,12 +1445,12 @@ const SPH = {
             for (let k = 0; k < 2*n; k++) {
               const i = s0 + ((dir === 0 ? k : 2*n - 1 - k) % n);
               if (stA[i] === SEG_WET) carry = true;
-              else if (stA[i] !== SEG_CRACK) carry = false;    // 空気で切れる
-              else if (carry) stA[i] = SEG_WET;                // 隙間ごしに伝わった
+              else if (stA[i] === SEG_AIR) carry = false;      // 空気で切れる
+              else if (carry) stA[i] = SEG_WET;                // 隙間・薄い水膜ごしに伝わった
             }
           }
         } else {                                 // 対照：接している面をぜんぶ濡らす
-          for (let i = s0; i < e0; i++) if (stA[i] === SEG_CRACK) stA[i] = SEG_WET;
+          for (let i = s0; i < e0; i++) if (stA[i] !== SEG_AIR) stA[i] = SEG_WET;
         }
         s0 = e0;
       }
@@ -1058,7 +1458,8 @@ const SPH = {
       let fx = 0, fy = 0, tz = 0, wet = 0;
       for (let i = 0; i < nSeg; i++) {
         if (stA[i] !== SEG_WET) continue;
-        const P  = rho * gSI * (dpA[i] * PX2M);                       // [Pa]
+        const P  = lay ? gSI * (rdA[i] * PX2M)                         // [Pa] 層の重みの和
+                       : rho * gSI * (dpA[i] * PX2M);                   // [Pa]
         const dF = P * (dsA[i] * PX2M * world.depth) * M2PX;          // [kg·px/s²]
         fx -= nxA[i] * dF; fy -= nyA[i] * dF;                         // 圧力は面を内向きに押す
         tz -= (mxA[i] - b.x) * (nyA[i] * dF) - (myA[i] - b.y) * (nxA[i] * dF);
@@ -1069,6 +1470,47 @@ const SPH = {
       c.bx = (c.bx || 0) + fx;
       c.by = (c.by || 0) + fy;
       c.btz = (c.btz || 0) + tz;
+      // ── まわりの水の速さと、抵抗の反作用（applySphCoupling の★）──
+      //   外接矩形から buoyFlowPad 粒子間隔までの帯にいる液体の粒の平均速度を「その場の水の
+      //   速さ」とする。前のtickに物体が受けた抵抗の力積（c.djx/djy）は、同じ帯の粒へ
+      //   等分して逆向きに返す（運動量を保存する。動く物体は水を引きずり、水は物体を押し流す）。
+      if (this.buoyRelFlow) {
+        const g = this._g, hh = this.h, pad = Math.max(this.buoyFlowPad, this.buoyReactPad) * sp, pad2 = pad * pad;
+        const in2 = (this.buoyFlowIn * sp) ** 2, out2 = (this.buoyFlowPad * sp) ** 2, rp2 = (this.buoyReactPad * sp) ** 2;
+        const band = this._flowBand; band.length = 0;
+        let sx = 0, sy = 0, nr = 0;
+        const cx0 = Math.floor((a.minX - pad) / hh), cx1 = Math.floor((a.maxX + pad) / hh);
+        const cy0 = Math.floor((a.minY - pad) / hh), cy1 = Math.floor((a.maxY + pad) / hh);
+        for (let gx = cx0; gx <= cx1; gx++) for (let gy = cy0; gy <= cy1; gy++) {
+          const sl = this._slot(g, gx, gy);
+          if (sl < 0) continue;
+          const e = g.start[sl] + g.count[sl];
+          for (let k = g.start[sl]; k < e; k++) {
+            const q = g.pts[g.order[k]];
+            if (q.type !== 'fluid') continue;
+            const ex = Math.max(a.minX - q.x, 0, q.x - a.maxX), ey = Math.max(a.minY - q.y, 0, q.y - a.maxY);
+            const e2 = ex*ex + ey*ey;
+            if (e2 > pad2 || b.containsPoint(q.x, q.y)) continue;
+            if (e2 >= in2 && e2 <= out2) { sx += q.vx; sy += q.vy; nr++; }
+            if (e2 <= rp2) band.push(q);
+          }
+        }
+        const n = band.length;
+        if (nr) {
+          const kf = this.buoyFlowTau > 0 ? Math.min(1, dt / this.buoyFlowTau) : 1;
+          c.uwx = (c.uwx || 0) + (sx / nr - (c.uwx || 0)) * kf;
+          c.uwy = (c.uwy || 0) + (sy / nr - (c.uwy || 0)) * kf;
+        }
+        if (n && this.buoyFlowReact) {
+          if (c.djx || c.djy) {
+            const k2 = PX2M * PX2M * world.depth;
+            for (const q of band) {
+              const mq = q.prm.density * (q.prm.restArea || PARTICLE_TYPES.fluid.restArea) * k2;   // [kg]
+              q.vx -= c.djx / (n * mq); q.vy -= c.djy / (n * mq);
+            }
+          }
+        }
+      }
       // ── 粘性抵抗の係数 ──
       //   ★体積に比例させるのでは足りない。浮力は復元力 k = ρ g A_水線 のばねで、
       //     軽い物体ほど固有振動が速い（密度100・40cm角のスポンジで周期 0.09秒）。
@@ -1077,12 +1519,75 @@ const SPH = {
       //     なました力の中に減衰を混ぜ込むと、遅れた速度で減衰することになり、固有周期が
       //     なましの時定数と同じくらい速い軽い物体では、止めるどころか煽ってしまう
       //     （実測：スポンジが水面から数百px 跳ね上がり続けた）。
-      const spanR = Math.abs((a.maxX-a.minX)*rx) + Math.abs((a.maxY-a.minY)*ry);   // 水線の幅 [px]
-      const kSpr = rho * (spanR * PX2M * world.depth) * PX2M * gl;   // [kg/s²]
+      //   ★この減衰は「浮いた物体が波を出して揺れを失う」ぶんの代わりなので、ばねがあるところ
+      //     ＝物体が水面や層の境目を貫いているときにだけ効かせる。k は「貫いている高さでの
+      //     物体の幅 × 密度の段差」の和（水面なら ρ×水線の幅、油と水の境目なら (ρ水−ρ油)×幅）。
+      //     以前は外形の幅で、沈みきった物体にも同じ強さで掛かっていた。すると水中の物体の
+      //     動きは臨界減衰の終端速度 (ρ物−ρ水)/(2√(ρ水ρ物))·√(g·h) で決まり、密度1100 の
+      //     40cm の箱が毎秒 9px しか沈まなかった（蜂蜜の中のように見える）。
+      //   ★水中の抵抗は、下の抗力 ½ρC_d·A·v²（applySphCoupling）が受け持つ。C_d は2次元の柱の
+      //     値（Re 1e4〜1e5 で円柱 1.2・角柱 2.0。この系は奥行き方向に一様な2次元なので柱の値）。
+      //     実測（水だけのコップ・76×40px の箱を平らに落とす・底から 30〜110px の間の平均の速さ。
+      //     理論は終端速度 √(2(ρ物/ρ水−1)g·h/C_d)）：
+      //         密度        1020   1050   1100   1200   1500   2000
+      //         実測 px/s   27.6   42.0   59.1   84.9   133.7  187.6
+      //         理論 px/s   28.0   44.3   62.6   88.5   140    198
+      //         旧来        —      —      5.3    —      38.4   —
+      //     少し遅いのは、1500 以上ではまだ加速の途中で底へ着くため。円（半径20）は 1100 で
+      //     66.7（理論 71.6）。SPH の押し出しの反作用は抵抗をほとんど出さない（抗力も減衰も切ると、
+      //     1020 はほぼ自由落下で 0.78秒で底に着く）。
+      //   ★抗力はまわりの水に対する相対速度に掛ける。減衰は上下にだけ、物体の速度に（SPH.buoyRelFlow の★）。
+      //   ☆強い減衰が隠していたものが出た：(1) 中性浮力（1000）の箱は入水で受けたわずかな回転が
+      //     止まらず、底で縦に立つ（measure-buoyancy の傾き 0 → 87°）。→ 2026-11-20 に原因を2つ直した：
+      //     入水で上面が片側だけ濡れるトルク（SPH.buoySubWet）と、床とのすき間に挟まった粒子の
+      //     蹴り（SPH.coupleGapCut）。どちらも静水圧では出ない力だった。(2) 1100 の円（半径20）は底で、下に挟まった粒子
+      //     （平均 2.4 個）に乗って 0〜11px 上下しながら、毎秒 5px で横へ転がる（以前は 5.6px で静止）。
+      //     1500 以上の円は底まで届いて、ゆっくり転がるだけ。挟まった粒子の押し出しの反作用（0.084W）が
+      //     円を支えている。→ 2026-11-20 に SPH.coupleGapCut（_collideBodies の★）で直った。(3) 層の境目の箱は σ 3〜4px で揺れ続けた → 境目にもばねを立てて
+      //     σ 0.1〜0.3px に戻した（上の k の和はそのため）。
+      // ★層のときの抗力は、物体の中心の高さにある液体の密度で見積もる
+      const rhoK = lay ? this._layerRho(lay, runB, b.x*ux + b.y*uy) : rho;
+      // ばね k = g∫w(z)(−dρ/dz)dz：物体が貫く水面（ρ → 0）と層の境目（ρ下 → ρ上）ごとに
+      //   「その高さでの物体の幅 × 密度の段差」を足す（[kg/m³·px]）。下の減衰の★。
+      let kRw;
+      if (this.buoyWaterline) {
+        const wAt = (h) => {                     // 高さ h の水平線に沿って物体の中にある長さ [px]
+          let w = 0;
+          for (let sr = cLo + 1; sr < cHi; sr += 2)
+            if (b.containsPoint(sr*rx + h*ux, sr*ry + h*uy)) w += 2;
+          return w;
+        };
+        kRw = (lay ? this._layerRho(lay, runB, level - 1) : rho) * wAt(level);
+        if (lay) {
+          let hLo = Infinity, hHi = -Infinity;
+          for (const [qx, qy] of [[a.minX,a.minY],[a.maxX,a.minY],[a.minX,a.maxY],[a.maxX,a.maxY]]) {
+            const h = qx*ux + qy*uy;
+            if (h < hLo) hLo = h;
+            if (h > hHi) hHi = h;
+          }
+          hHi = Math.min(hHi, level);
+          const sp2 = lay.sp;
+          for (let k = Math.ceil((hLo - lay.hmin) / sp2); lay.hmin + k*sp2 < hHi; k++) {
+            const z = lay.hmin + k*sp2;            // 段の境目
+            const dr = this._layerRho(lay, runB, z - sp2/2) - this._layerRho(lay, runB, z + sp2/2);
+            if (dr > 0) kRw += dr * wAt(z);         // 上が軽い（安定な）段差だけ
+          }
+        }
+      } else {                                     // 旧来（対照）：中心の密度 × 外形の幅
+        kRw = rhoK * (Math.abs((a.maxX-a.minX)*rx) + Math.abs((a.maxY-a.minY)*ry));
+      }
+      const kSpr = kRw * PX2M * world.depth * PX2M * gl;                // [kg/s²]
       const cLin = this.buoyZeta * 2 * Math.sqrt(Math.max(0, kSpr) / b.invMass);
       const rg2 = b.invInertia > 0 ? b.invMass / b.invInertia : 0;   // 回転半径² [px²]
       c.bc  = (c.bc  || 0) + cLin;
       c.bcr = (c.bcr || 0) + cLin * rg2 * this.buoyAngZeta;
+      // ── 水の抗力（速さの2乗）──  F = ½ρ C_d A v²（A は流れに向けた幅 × 奥行き）
+      //   濡れている周の割合を掛ける（半分つかった物体は半分だけ受ける）。係数だけ渡し、
+      //   幅と速さは applySphCoupling がそのサブステップの値で決める（上の減衰と同じ理由）。
+      let perim = 0;
+      for (let i = 0; i < nSeg; i++) perim += dsA[i];
+      const Cd = b.type === 'circle' ? this.buoyCdCircle : this.buoyCdPoly;
+      c.bq = (c.bq || 0) + 0.5 * rhoK * Cd * world.depth * PX2M * PX2M * (perim > 0 ? wet / perim : 0);
     }
   },
   // ── 衝突は位置押し出しのみ（速度反射はしない。速度は⑤で位置差分から決まる）──
@@ -1166,6 +1671,41 @@ const SPH = {
   //     （実測：熱量保存デモの鉄が30秒で 31.5℃→65.4℃ のまま／対流デモは
   //       上下の温度差が 4.8℃→0.0℃ で循環が完全に止まった）。
   //     接触は幾何で決めるのが正しい。ソルバの副作用に相乗りさせない。
+  // _surfDist と同じ距離を返し、最寄りの面の点から粒子へ向かう単位ベクトルを this._snx/_sny に置く
+  _surfNear(p, b) {
+    if (b.type === 'circle') {
+      const dx = p.x - b.x, dy = p.y - b.y, l = len(dx, dy) || 1e-9;
+      const sg = l >= b.radius ? 1 : -1;
+      this._snx = sg * dx / l; this._sny = sg * dy / l;
+      return Math.abs(l - b.radius);
+    }
+    const outline = b._localOutline();
+    if (!outline || outline.length < 3) return Infinity;
+    const c1 = Math.cos(-b.angle), s1 = Math.sin(-b.angle);
+    const ux = p.x - b.x, uy = p.y - b.y;
+    const lx = c1*ux - s1*uy, ly = s1*ux + c1*uy;
+    let best2 = Infinity, bx = 0, by = 0;
+    const scan = loop => {
+      const nn = loop.length;
+      for (let i = 0; i < nn; i++) {
+        const s = loop[i], e = loop[(i+1) % nn];
+        const ex = e.x-s.x, ey = e.y-s.y;
+        const eL2 = ex*ex + ey*ey || 1e-6;
+        let t = ((lx-s.x)*ex + (ly-s.y)*ey) / eL2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = lx - (s.x + ex*t), qy = ly - (s.y + ey*t);
+        const d2 = qx*qx + qy*qy;
+        if (d2 < best2) { best2 = d2; bx = qx; by = qy; }
+      }
+    };
+    scan(outline);
+    if (b.type === 'polygon' && b.holes) for (const hl of b.holes) if (hl.length >= 3) scan(hl);
+    const d = Math.sqrt(best2) || 1e-9;
+    const c2 = Math.cos(b.angle), s2 = Math.sin(b.angle);
+    this._snx = (c2*bx - s2*by) / d; this._sny = (s2*bx + c2*by) / d;
+    return Math.sqrt(best2);
+  },
+  _snx: 0, _sny: 0,
   _surfDist(p, b) {
     if (b.type === 'circle') return Math.abs(len(p.x - b.x, p.y - b.y) - b.radius);
     const outline = b._localOutline();
@@ -1319,6 +1859,9 @@ const SPH = {
     //   いまの値は壁の鏡像を入れたあとの 29/94/100% ＝ demos-mechanics.js の★を参照。
     const hit = this._touched; hit.length = 0;   // このtickで押し出した物体（使い回し）
     let winX = 0, winY = 0;                      // 最後に効いた押し出しの法線
+    const pB = this._pendB, pV = this._pendV;    // 動く物体への反作用は、静止した側の押し戻しを見てから積む
+    pB.length = 0; pV.length = 0;
+    let stX = 0, stY = 0;                        // 静止した物体・地面が押し戻した量の和
     for (let phase = 0; phase < 2; phase++)
     for (const b of objects) {
       if ((b.isStatic ? 1 : 0) !== phase) continue;
@@ -1349,7 +1892,7 @@ const SPH = {
       else                    this._collideBodyPoly(p, b);
       const cdx = p.x - bx0, cdy = p.y - by0;
       const touched = (cdx !== 0 || cdy !== 0);   // 押し出した＝接触している
-      if (touched) { hit.push(b); winX = this._hitNormX; winY = this._hitNormY; }
+      if (touched) { hit.push(b); winX = this._hitNormX; winY = this._hitNormY; if (b.isStatic) { stX += cdx; stY += cdy; } }
       // ★熱伝導（粒子 ↔ 物体）。静的な物体とも熱はやりとりするので、
       //   下の連成（動く物体だけ）とは別に扱う。
       //   ★「触れている」は幾何で決める（_surfDist）。押し出しが起きたかどうかで
@@ -1373,8 +1916,11 @@ const SPH = {
       //   なましたあと（_finishCoupling → step.js のサブステップ）。
       if (!b.isStatic) {
         if (touched) {
-          let jx = -cdx * this.coupleMass * invDt * this.coupleGain;
-          let jy = -cdy * this.coupleMass * invDt * this.coupleGain;
+          // ★便宜上の質量 coupleMass は水1粒ぶん。油・食塩水は密度の比（mrel）を掛ける
+          //   （同じ速さで叩いても、軽い液体ほど物体を押さない）。水は ×1 で従来どおり。
+          const cm = this.coupleMass * p.prm.mrel;
+          let jx = -cdx * cm * invDt * this.coupleGain;
+          let jy = -cdy * cm * invDt * this.coupleGain;
           // ★減衰：押し出し方向の相対速度に逆らう力積を足す。位置ぶんだけだと
           //   「ばね定数だけあって減衰ゼロ」＝一度ずれたら振動が止まらない。
           if (this.coupleDamp > 0) {
@@ -1387,22 +1933,94 @@ const SPH = {
               // 粒子の（押し出し前の）速度との法線相対速度。負＝食い込む向き
               const vn = ((bx0 - p.px)*invDt - sx)*nx + ((by0 - p.py)*invDt - sy)*ny;
               if (vn < 0) {
-                const jd = vn * this.coupleMass * this.coupleDamp;   // vn<0 なので jd<0
+                const jd = vn * cm * this.coupleDamp;   // vn<0 なので jd<0
                 jx += jd * nx; jy += jd * ny;
               }
             }
           }
           const jl = len(jx, jy);
           if (jl > this.coupleMaxImpulse) { jx = jx/jl*this.coupleMaxImpulse; jy = jy/jl*this.coupleMaxImpulse; }
-          const c = b._cpl || (b._cpl = { jx:0, jy:0, tz:0, fx:0, fy:0, tz_:0 });
-          c.jx += jx; c.jy += jy;
-          c.tz += (bx0 - b.x)*jy - (by0 - b.y)*jx;
+          pB.push(b);
+          pV.push(jx, jy, (bx0 - b.x)*jy - (by0 - b.y)*jx, cdx, cdy);
         }
       }
+    }
+    // ── 押し戻された押し出しは反作用に数えない ──
+    //   ★動く物体と、静止した物体（容器の床）や地面とのあいだに挟まった粒子は、動く物体に
+    //     押し出されても、静止した側に毎tick 押し戻される。押し出し量は毎tick 同じだけ出るので、
+    //     その反作用が物体を下から支え続ける＝薄い水膜が重さを支えることになる。実物の水膜は
+    //     横へ抜けるだけで静かな荷重は支えない（支えるのは静水圧で、それは _buoyancy が床に
+    //     接した面にも出している＝SPH.buoyCrack の★）。
+    //     実測（水だけのコップ・半径20の円・乱数固定・900tick 落ち着かせて 300tick 平均）：
+    //     密度1100 の円は、下に挟まった粒子（平均 2.4 個）からの反作用 0.084W（正味の重さ
+    //     0.091W）に支えられて、底から 5.6px 上で 0〜11px 跳ねながら転がっていた。
+    //     浮いている物体は静止した物体に触れないので値は変わらない（measure-buoyancy の1個ずつは
+    //     小数第1位まで同じ）。地面（terrain）の上に静止した壁で作った水槽では、円は底に着いていて
+    //     反作用が 0.066 → 0.043W に減った。
+    //   ☆これで跳ねる円は直っていない（→ 2026-11-20 に SPH.coupleGapCut で直った。下の★）。乱数1つ（12345）では底に着いて静止した（5.6±3.8px →
+    //     −0.5±0px）が、乱数を6つに広げると、入れても入れなくても 6回中6回とも跳ねた
+    //     （底からの高さの平均は、入れないと 6.2〜7.7px、入れると 3.6〜6.4px。1500 の円は 6/6 で底に着く）。
+    //     円の下に粒子が入り込む・押し出されるの繰り返しで、どちらに落ち着くかが偶然で決まる。
+    //     それでも残すのは、「薄い水膜は静かな荷重を支えない」が物理として正しく、浮き上がりも減るため。
+    //   ★押し出しのうち、静止した側の押し戻しで打ち消された割合だけを除く（向かい合っていない
+    //     押し戻し＝角をかすめただけ、なら除かない）。地面は _collideGround が先に解くので、
+    //     押し出しのあとに地面へ食い込んでいれば、その食い込みを押し戻しとして数える。
+    if (this.coupleTrapCut && pB.length && world.terrain && ground.layers !== 0) {
+      const d = signedDistToGround(p.x, p.y) - p.radius;
+      if (d < 0) { stX -= Math.sin(ground.angle) * d; stY += Math.cos(ground.angle) * d; }
+    }
+    // ★すき間の水膜（SPH.coupleGapCut）：動く物体と、反対側にある静止した面とのすき間が
+    //   粒子1個ぶんより狭いところの粒子は、反作用に数えない。粒子間隔ぶん広がると元に戻す。
+    //   そのすき間の水は粒子の解像度より薄く、SPH の圧力は意味を持たない（静水圧は _buoyancy が
+    //   面のつながりで出している）。実際、傾いて沈む中性浮力の箱の角が床から 1px まで近づくと、
+    //   くさびに押し込まれた粒子が 25tick のあいだ 0.05W の力とトルクを返し、毎秒 0.1px で
+    //   近づいていた箱を毎秒 14.7px・0.71 rad/s で跳ね上げた（エネルギーが湧いている）。
+    //   上の coupleTrapCut は「同じ tick に床が押し戻した」ときしか効かず、これを止めない。
+    //   実測は SPH.buoySubWet の★（底での傾き 50.2° → 2.5°）。
+    //   ★下の☆の「底で跳ねる 1100 の円」もこれで止まった（同じ乱数6つ：切らないと 4/6 が平均 4px
+    //     浮いて σ 2〜3px で跳ねる → 切ると 6/6 が底に着いて −0.5±0px）。円の下に入り込んだ粒子は
+    //     まさにこの「粒子1個ぶんより狭いすき間」にいた。
+    let gS = Infinity, gNx = 0, gNy = 0, gapOn = this.coupleGapCut > 0 && pB.length > 0;
+    if (gapOn) {
+      const sp = Math.sqrt(PARTICLE_TYPES.fluid.restArea), reach = sp * (1 + this.coupleGapCut);
+      if (world.terrain && ground.layers !== 0) {
+        const d = signedDistToGround(p.x, p.y);
+        if (d < reach) { gS = d; gNx = Math.sin(ground.angle); gNy = -Math.cos(ground.angle); }
+      }
+      for (const o of objects) {
+        if (!o.isStatic || _ghostBody(o)) continue;
+        const a = o._aabb;
+        if (p.x < a.minX - reach || p.x > a.maxX + reach || p.y < a.minY - reach || p.y > a.maxY + reach) continue;
+        const d = this._surfNear(p, o);
+        if (d < gS) { gS = d; gNx = this._snx; gNy = this._sny; }
+      }
+      if (gS >= reach) gapOn = false;
+    }
+    for (let k = 0; k < pB.length; k++) {
+      const b = pB[k], o = k*5;
+      let f = 1;
+      if (gapOn) {
+        const dx = pV[o+3], dy = pV[o+4];                // 物体から粒子へ（押し出した向き）
+        if (dx*gNx + dy*gNy < 0) {                       // 静止した面は反対側＝はさまれている
+          const sp = Math.sqrt(PARTICLE_TYPES.fluid.restArea);
+          const clear = gS + this._surfDist(p, b);       // 2つの面のあいだの幅（粒子の中心を通って）
+          f = Math.min(1, Math.max(0, (clear - sp) / (sp * this.coupleGapCut)));
+        }
+      }
+      if (this.coupleTrapCut && (stX || stY)) {
+        const dx = pV[o+3], dy = pV[o+4], dd = dx*dx + dy*dy;
+        const u = dd > 0 ? -(dx*stX + dy*stY) / dd : 0;   // 打ち消された割合
+        if (u > 0) f = Math.min(f, Math.max(0, 1 - u));
+      }
+      if (f <= 0) continue;
+      const c = b._cpl || (b._cpl = { jx:0, jy:0, tz:0, fx:0, fy:0, tz_:0 });
+      c.jx += pV[o]*f; c.jy += pV[o+1]*f;
+      c.tz += pV[o+2]*f;
     }
     if (hit.length > 1) this._squeezeOut(p, hit, winX, winY);
   },
   _touched: [],
+  _pendB: [], _pendV: [], _flowBand: [],
   // ── はさまれた粒子を、面に沿って横へ逃がす ────────────────────────
   //   ★2つの物体が正面から向かい合っているところ（重い物体の底と容器の床のあいだ）
   //     では、押し出す向きが真逆になり、どちらへも出られない。上の phase の決まりで
@@ -1478,8 +2096,9 @@ const SPH = {
       c.btz_ = (c.btz_ || 0) + ((c.btz || 0) - (c.btz_ || 0)) * ab;
       c.bcf  = (c.bcf  || 0) + ((c.bc  || 0) - (c.bcf  || 0)) * ab;
       c.bcrf = (c.bcrf || 0) + ((c.bcr || 0) - (c.bcrf || 0)) * ab;
-      c.bx = 0; c.by = 0; c.btz = 0; c.bc = 0; c.bcr = 0;
-      if (b.isStatic) { c.fx = c.fy = c.tz_ = 0; c.bfx = c.bfy = c.btz_ = 0; c.bcf = c.bcrf = 0; continue; }
+      c.bqf  = (c.bqf  || 0) + ((c.bq  || 0) - (c.bqf  || 0)) * ab;
+      c.bx = 0; c.by = 0; c.btz = 0; c.bc = 0; c.bcr = 0; c.bq = 0; c.djx = 0; c.djy = 0;
+      if (b.isStatic) { c.fx = c.fy = c.tz_ = 0; c.bfx = c.bfy = c.btz_ = 0; c.bcf = c.bcrf = c.bqf = 0; continue; }
       // 総量の頭打ち（力とトルクを同じ比率で落とす＝向きは変えない）
       const wN = b.mass * len(gravPxX(), gravPxY());   // 物体自身の重さ [kg·px/s²]
       const cap = wN * this.coupleMaxG;
@@ -1503,9 +2122,47 @@ function applySphCoupling(dt) {
     if (!c || b.isStatic || b.held || b.invMass === 0) continue;
     // 押し出しの反作用 ＋ 浮力 ＋ 水の粘性抵抗（★抵抗だけは「今の速度」に掛ける。
     // なました力に混ぜると遅れた速度で減衰することになり、軽い物体では煽りになる）
-    const fx = c.fx + (c.bfx || 0) - (c.bcf || 0) * b.vx;
-    const fy = c.fy + (c.bfy || 0) - (c.bcf || 0) * b.vy;
-    const tz = c.tz_ + (c.btz_ || 0) - (c.bcrf || 0) * b.av;
+    //   ★「今の速度」は位置を実際に進めた速度 v − _gHx（重力の半分を引いたもの。body.js の
+    //     integrate の★）で読む。ここは integrate のあとなので b.vy には重力が丸ごと入っていて、
+    //     静止した物体でも +g·dt/2 に見える。これに −c·v を掛けると上向きに c·g·dt/2 ＝
+    //     ω·dt·W（76×40px の箱で 2%W）が出続け、水の 1.02 倍の物体が沈まなかった。
+    //     実測：静止した 1020 の箱で tick の終わりの vy は −2.13px/s（−g·dt_sub/2 ＝ −2.04）、
+    //     抵抗の時間平均は 0.021W。位置を進めた速度で読めば静止で 0 になり、浮く箱の浮力の
+    //     時間平均が 0.952 → 1.000W（密度200）になる。数字の表は SPH.buoyFilm の★。
+    //   ★gHx はあとから足す万有引力の後ろ半分も入る帳簿（gravitation.js の★）なので、
+    //     速度とそろって増え、差はやはり位置を進めた速度のままになる。
+    const sw = SPH.buoyDragMid ? 1 : 0;
+    const vbx = b.vx - sw * (b._gHx || 0), vby = b.vy - sw * (b._gHy || 0);   // 位置を進めた速度
+    // ① 揺れを止める減衰（水面・層の境目のばねの臨界減衰。_buoyancy の減衰の★）
+    //   ★重力の向き（上下）にだけ、物体自身の速度に掛ける。ばねは上下にしか無いので、水平に
+    //     掛ける理由が無い。水平にも掛けると、流れる水に浮かべた物体が流れに逆らって止まる。
+    //     相対速度にもしない：波立つ水の速さに掛けると、浮いた物体が波に揺すられて沈み込んだ
+    //     （実測：U字の舟の喫水 18.9 → 25.2px。理論 13.9px）。
+    let cl = c.bcf || 0, cr = c.bcrf || 0;
+    let gux = 0, guy = 0;
+    { const gx = gravPxX(), gy = gravPxY(), gl = Math.hypot(gx, gy); if (gl > 0) { gux = gx / gl; guy = gy / gl; } }
+    const vv = vbx * gux + vby * guy;                            // 上下の速さ
+    if (cl * dt * b.invMass > 1) cl = 1 / (dt * b.invMass);       // ★動きを止めるまで（反転させない）
+    let fdx = SPH.buoyDampVert ? -cl * vv * gux : -cl * vbx, fdy = SPH.buoyDampVert ? -cl * vv * guy : -cl * vby;
+    // ② 水の抗力 ½ρC_d·A·|v|·v。v はまわりの水に対する速度（SPH.buoyRelFlow の★）。
+    //   A は外接矩形を流れに向けた幅（横へ動けば高さ、縦へ動けば幅）。回転は幅 W の板が中心の
+    //   まわりに回るときの ∫½ρC_d(ωr)²·r dr ＝ ½ρC_d·|ω|ω·W⁴/32 を、縦横の2枚の平均で見積もる。
+    const rf = SPH.buoyRelFlow ? 1 : 0;
+    const vrx = vbx - rf * (c.uwx || 0), vry = vby - rf * (c.uwy || 0);
+    const bq = c.bqf || 0;
+    if (bq > 0) {
+      const a = b._aabb, Wx = a.maxX - a.minX, Wy = a.maxY - a.minY;
+      let cq = bq * (Math.abs(vrx) * Wy + Math.abs(vry) * Wx);   // = bq·A·|v|
+      if (cq * dt * b.invMass > 1) cq = 1 / (dt * b.invMass);
+      fdx -= cq * vrx; fdy -= cq * vry;
+      // 抗力の反作用は次の _buoyancy で水へ返す（buoyFlowReact のとき。減衰①は返さない）
+      if (rf && SPH.buoyFlowReact && !b.sleeping) { c.djx = (c.djx || 0) - cq * vrx * dt; c.djy = (c.djy || 0) - cq * vry * dt; }
+      cr += bq * Math.abs(b.av) * (Wx**4 + Wy**4) / 64;
+    }
+    if (b.invInertia > 0 && cr * dt * b.invInertia > 1) cr = 1 / (dt * b.invInertia);
+    const fx = c.fx + (c.bfx || 0) + fdx;
+    const fy = c.fy + (c.bfy || 0) + fdy;
+    const tz = c.tz_ + (c.btz_ || 0) - cr * b.av;
     if (!fx && !fy && !tz) continue;
     if (b.sleeping) continue;
     b.vx += fx * b.invMass * dt;
@@ -1517,7 +2174,8 @@ function applySphCoupling(dt) {
 
 function spawnParticles(at, type) {
   for (let i = 0; i < particleSpawnPerEvent && particles.length < particleMaxCount; i++) {
-    const p = new Particle(at.x + (Math.random()-.5)*20, at.y + (Math.random()-.5)*20, type);
+    const p = new Particle(at.x + (Math.random()-.5)*20, at.y + (Math.random()-.5)*20, type,
+                           type === 'fluid' ? particleLiquid : undefined);   // 液体の種類（ツールの窓で選ぶ）
     if (particleColor) p.color = particleColor;   // ★印の色（null なら型の色のまま）
     particles.push(p);
   }

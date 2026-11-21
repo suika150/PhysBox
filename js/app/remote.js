@@ -946,7 +946,7 @@ function buildRemotePanel(r) {
   panel.innerHTML =
     '<div class="vg-header">' +
       // ★見出しの残りの幅はタイトルが取る＝⌄ と × を窓の右上に寄せる（プログラムの窓と同じ位置）
-      '<span class="vg-title" style="flex:1 1 auto;min-width:0">リモコン ' + r.id + '</span>' +
+      '<span class="vg-title" style="flex:1 1 auto;min-width:0">リモコン ' + escHtml(r.id) + '</span>' +
       '<span class="vg-close rm-fold" title="畳む／開く">⌄</span>' +
       '<span class="vg-close rm-del">×</span>' +
     '</div>' +

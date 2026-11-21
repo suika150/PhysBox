@@ -400,6 +400,9 @@ const PROP_SLIDERS = {
   friction:       { label:'動摩擦係数 μk',     lo:0,   hi:2,   step:0.05 },
   frictionStatic: { label:'静止摩擦係数 μs',   lo:0,   hi:2,   step:0.05 },
   drag:           { label:'抗力係数 Cd',       lo:0,   hi:2.5, step:0.05 },
+  // ★割れる力。床に直接落とした 0.5kg の卵（1m）が約 140 N、ばねのクッションで 20〜40 N
+  //   （fracture.js の★）。その両側を含む幅にする。範囲外は数値欄で入力
+  breakForce:     { label:'割れる力 [N]',      lo:1,   hi:1000, sig:true },
   emissivity:     { label:'放射率 ε',          lo:0,   hi:1,   step:0.05 },
   // ★欄は℃、b.temp は K。変換はここに1組だけ置く（onchange もつまみもこれを通る）
   temp:           { label:'温度 [℃]',         lo:-100, hi:500, step:1,
@@ -438,6 +441,7 @@ function initSliders(){
   T('p-friction','friction');                       // 動摩擦係数：線形
   T('p-friction-s','frictionStatic');               // ★静止摩擦係数：線形
   T('p-drag','drag');                               // 抗力係数 Cd：線形
+  T('p-breakforce','breakForce');                   // ★割れる力 [N]：有効数字2桁
   // ── 熱 ──
   //   温度は線形（実用域は氷点下〜数百℃の1〜2桁で、有効数字方式にする理由がない）。
   //   数値欄は絶対零度まで打てるが、つまみは教材で使う −100〜500℃ に絞る。

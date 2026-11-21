@@ -382,6 +382,8 @@
               <div class="prop-row"><span class="prop-label">動摩擦係数<span class="u"> μ<sub>k</sub></span></span><input class="prop-input" id="p-friction" type="number" step="0.05" min="0" onchange="updateProp('friction',this.value)"></div>
               <div class="prop-row"><span class="prop-label">静止摩擦係数<span class="u"> μ<sub>s</sub></span></span><input class="prop-input" id="p-friction-s" type="number" step="0.05" min="0" title="滑り出す直前まではこちらが使われます。μs ≧ μk になるよう自動補正されます" onchange="updateProp('frictionStatic',this.value)"></div>
               <div class="prop-row"><span class="prop-label">抗力係数 Cd</span><input class="prop-input" id="p-drag" type="number" step="0.05" min="0" title="0=空気抵抗なし。球≈0.47／平板≈1.2。空気密度が0だと効きません" onchange="updateProp('drag',this.value)"></div>
+              <div class="checkbox-row"><input type="checkbox" id="p-breakable" onchange="updateProp('breakable',this.checked)"><label for="p-breakable">割れる</label></div>
+              <div class="prop-row" id="p-breakforce-row" style="display:none"><span class="prop-label">割れる力 [N]</span><input class="prop-input" id="p-breakforce" type="number" step="1" min="0.1" title="接触から受けた力（1/60 秒ごとの平均）がこれ以上になると割れます。&#10;硬い床に直接ぶつかったときの値は「ぶつかる前後の運動量の変化 ÷ 1/60 秒」になります" onchange="updateProp('breakForce',this.value)"></div>
             </div>
             <div class="prop-group">
               <div class="prop-group-title">運動の様子</div>
@@ -671,7 +673,7 @@
           <!-- 粒子（液体・気体）。個体ではなく群れとして扱うので、個数と平均温度を出す -->
           <div id="particle-form" style="display:none">
             <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="pcl-title">粒子を選択中</div>
-            <div class="prop-row"><span class="prop-label">種類</span><input class="prop-input" id="pcl-kind" type="text" readonly title="液体（水）か気体か。範囲選択のあと右クリック →「液体のみ選択」「気体のみ選択」で分けられます"></div>
+            <div class="prop-row"><span class="prop-label">種類</span><input class="prop-input" id="pcl-kind" type="text" readonly title="液体の種類（水・油・食塩水）か気体か。範囲選択のあと右クリック →「液体のみ選択」「気体のみ選択」で分けられます"></div>
             <div class="prop-row"><span class="prop-label">個数</span><input class="prop-input" id="pcl-count" type="number" readonly title="選んでいる粒子の数"></div>
             <div class="prop-row" id="pcl-temp-row"><span class="prop-label">温度 [℃]</span><input class="prop-input" id="pcl-temp" type="number" step="1" min="-273.15" title="選んだ粒子ぜんぶの平均温度です。打ち替える／つまみを動かすと、選んだ全部がその温度になります。&#10;★気体（分子）だけは選択によらず、いる分子ぜんぶがその温度になります。分子運動論の温度は集団の速度分布そのもので、分子の一部には配れないためです（一部にだけ書くと平均で薄まり、打った値になりません）。&#10;※ここで温度を変えると系の熱量が変わります（熱源を入れたのと同じ扱い）" onchange="updateParticleTemp(this.value)"></div>
             <div class="prop-row"><span class="prop-label">熱容量 C [J/K]</span><input class="prop-input" id="pcl-heatcap" type="number" readonly title="選んだ粒子の熱容量の合計。水は1粒子あたり約0.63kg・比熱4182 J/(kg·K) です"></div>
@@ -1013,10 +1015,12 @@
           <div style="font-size:10px;color:var(--text2);margin-top:4px">摩擦係数を0より大きくすると、背景が「真上から見下ろした水平面」として働きます。上の重力X・Yを0にして使ってください。横から見た場面のまま入れると、空中の物体まで減速します。</div>
         </div>
         <div class="rpanel-section">
-          <div class="rpanel-title">背景色</div>
+          <div class="rpanel-title">配色</div>
           <div class="prop-row">
-            <span class="prop-label">背景色</span>
-            <div class="color-swatch" id="bg-swatch" onclick="openColorPicker(this,'bg')"></div>
+            <span class="prop-label">配色</span>
+            <select class="prop-select" id="w-theme" onchange="setUiTheme(this.value)" title="背景・方眼・文字の色の組み合わせ。この端末に覚えられ、シーンには保存されません（表示メニューと同じ設定）">
+              <option value="dark">黒</option><option value="light">白</option>
+            </select>
           </div>
         </div>
         <div class="rpanel-section">
@@ -1043,6 +1047,7 @@
 </div>
 <script src="js/core/units.js"></script>
 <script src="js/core/state.js"></script>
+<script src="js/core/theme.js"></script>
 <script src="js/core/geometry.js"></script>
 <script src="js/physics/body.js"></script>
 <script src="js/physics/convex.js"></script>
@@ -1071,6 +1076,7 @@
 <script src="js/physics/broadphase.js"></script>
 <script src="js/physics/rope.js"></script>
 <script src="js/physics/step.js"></script>
+<script src="js/physics/fracture.js"></script>
 <script src="js/physics/predict.js"></script>
 <script src="js/physics/energy.js"></script>
 <script src="js/render/scene.js"></script>
@@ -1123,6 +1129,7 @@
 <script src="js/app/demos.js"></script>
 <script src="js/data/demo-thumbs.js"></script>   <!-- ★一覧窓のサムネイル（tools/thumbs.js が生成） -->
 <script src="js/ui/demo-browser.js"></script>
+<script src="js/app/share.js"></script>
 <script src="js/app/select-helpers.js"></script>
 <script src="js/data/help-text.js"></script>
 <script src="js/ui/help-popup.js"></script>

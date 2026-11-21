@@ -165,18 +165,17 @@ function buildPartArcFlags(parts, arcs) {
 //   contact には arcK / arcLx,arcLy / arcRad を入れておき、位置補正のときに
 //   真円で測り直せるようにする。
 function _arcContact(other, host, arc, k, C, ux, uy, depth, lx, ly, rad, orbit) {
-  return {
-    A: other, B: host,
-    nx: arc.concave ?  ux : -ux,
-    ny: arc.concave ?  uy : -uy,
-    depth, sep: -depth, cx: C.x + ux * arc.r, cy: C.y + uy * arc.r,
-    partA: -1, partB: 'a' + k,
-    arcK: k, arcLx: lx, arcLy: ly, arcRad: rad,
-    // ★接触している点が実際に回る半径（壁の半径ではない）。球なら中心が回る半径
-    //   r∓球半径。離散化で生じる見かけの接近速度 v²dt/orbit の見積りに使う。
-    arcR: orbit,
-
-  };
+  // ★形は collision.js の Contact にそろえる（そこの★。リテラルで作ると別の形になる）
+  const c = new Contact(other, host,
+    arc.concave ?  ux : -ux,
+    arc.concave ?  uy : -uy,
+    depth, -depth, C.x + ux * arc.r, C.y + uy * arc.r);
+  c.partA = -1; c.partB = 'a' + k;
+  c.arcK = k; c.arcLx = lx; c.arcLy = ly; c.arcRad = rad;
+  // ★接触している点が実際に回る半径（壁の半径ではない）。球なら中心が回る半径
+  //   r∓球半径。離散化で生じる見かけの接近速度 v²dt/orbit の見積りに使う。
+  c.arcR = orbit;
+  return c;
 }
 // only = 対象にする円弧の番号（Set）。多角形どうしの判定で「実際に材料と重なっている」
 //   と分かった円弧だけを渡すこと。渡さないと、へこみ側の円弧は「円の外にある物体は

@@ -16,7 +16,7 @@ const ticks = Number(process.argv[2] ?? 60);
   const note = s => errors.push(`${current}: ${s}`);
   page.on('pageerror', e => note(String(e)));
   page.on('console', m => { if (m.type() === 'error') note(m.text()); });
-  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href,
+  await page.goto(pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href,
                   { waitUntil: 'load' });
   await page.waitForSelector('#main-canvas');
 

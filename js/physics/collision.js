@@ -1,3 +1,44 @@
+// ════════════════════════════════════════
+//  接触点（物体どうし）。作る場所は4つ（円-円・円-多角形・多角形-多角形・円弧）。
+// ════════════════════════════════════════
+//  ★すべての接触を同じ形（V8 の隠れクラス）で作る。以前は作る場所ごとにオブジェクト
+//    リテラルの並びが違い、そのあと partA/cid・prepareContact の30余りのフィールド・
+//    力の矢印を出すときだけの _fkA/_fkB が条件つきで後から足されていたので、寿命の
+//    終わりには全デモで 6 通りの形があった。ソルバの関数（_relVelOn・_contactApplyN など）は
+//    全部の形を受けるので、プロパティの読み書きが V8 の「形を引き当てる遅い経路」
+//    （megamorphic）に落ちていた。実測（2026-11-18・箱 150 個の山の接触 320 個）：
+//      同じ本文の関数を、この接触だけを見せて新しく作ると  _relVelOn 179→47 ns、
+//      _contactApplyN 497→49 ns（中身は同じ。違いは見てきた形の数だけ）。
+//  ★後から入るフィールドも全部ここで undefined として先に並べる。値の意味は以前と同じ
+//    （読まれる前に必ず書かれるか、undefined であることを見ている：arcK・partA・_jnWarm・
+//    _fkA など）。全デモ 300tick の状態ハッシュは書き換え前と1ビットも違わない。
+//  ★フィールドを足すときは、ここにも足すこと（足し忘れても正しく動くが、また遅くなる）。
+class Contact {
+  constructor(A, B, nx, ny, depth, sep, cx, cy) {
+    this.A = A; this.B = B; this.nx = nx; this.ny = ny;
+    this.depth = depth; this.sep = sep; this.cx = cx; this.cy = cy;
+    // detectCollision・円弧が入れる
+    this.partA = undefined; this.partB = undefined;
+    this.arcK = undefined; this.arcLx = undefined; this.arcLy = undefined;
+    this.arcRad = undefined; this.arcR = undefined;
+    this.cid = undefined;
+    // prepareContact が入れる
+    this._pAx = undefined; this._pAy = undefined; this._pAa = undefined;
+    this._pBx = undefined; this._pBy = undefined; this._pBa = undefined;
+    this._skip = undefined;
+    this._rAx = undefined; this._rAy = undefined; this._rBx = undefined; this._rBy = undefined;
+    this._kn = undefined;
+    this._imA = undefined; this._imB = undefined; this._iiA = undefined; this._iiB = undefined;
+    this._tdx = undefined; this._tdy = undefined; this._kt = undefined;
+    this._vn0 = undefined; this._vnPre = undefined; this._vt0 = undefined; this._vtPos = undefined;
+    this._dt = undefined; this._drift = undefined; this._bias = undefined; this._e = undefined;
+    this._rec = undefined; this._fkA = undefined; this._fkB = undefined;
+    this._hit = undefined; this._mu = undefined;
+    this._jv = undefined; this._jn = undefined; this._jt = undefined; this._jnMax = undefined;
+    // step.js が入れる
+    this._jnWarm = undefined;
+  }
+}
 function _centroid(v){ let x=0,y=0; for(const p of v){x+=p.x;y+=p.y;} return {x:x/v.length,y:y/v.length}; }
 function _axesOf(verts, internal){
   const axes=[];
@@ -123,9 +164,9 @@ function _satConvexConvex(A, B, va, vb, iea, ieb){          // ★引数追加
   const ca=_centroid(va), cb=_centroid(vb);
   if((cb.x-ca.x)*nx+(cb.y-ca.y)*ny<0){ nx=-nx; ny=-ny; }
   const man = _polyManifold(A, B, va, vb, nx, ny, iea, ieb);   // ★フラグを渡す
-  if (man) return man.map(p => ({ A, B, nx, ny, depth: p.depth, sep: p.sep, cx: p.x, cy: p.y }));
+  if (man) return man.map(p => new Contact(A, B, nx, ny, p.depth, p.sep, p.x, p.y));
   return _deepestPoints(vb, nx, ny)
-  .map(p => ({ A, B, nx, ny, depth: minDepth, sep: -minDepth, cx: p.x, cy: p.y }));
+  .map(p => new Contact(A, B, nx, ny, minDepth, -minDepth, p.x, p.y));
 }
 function _satCirclePoly(circ, poly, verts, internal){        // ★引数追加
   let minDepth=Infinity, nx=0, ny=0, found=false;
@@ -180,8 +221,8 @@ function _satCirclePoly(circ, poly, verts, internal){        // ★引数追加
   if(!found){ minDepth=fbDepth; nx=fbx; ny=fby; }
   const c=_centroid(verts);
   if((c.x-circ.x)*nx+(c.y-circ.y)*ny<0){ nx=-nx; ny=-ny; }
-  return { A:circ, B:poly, nx, ny, depth:minDepth, sep:-minDepth,
-           cx:circ.x+nx*circ.radius, cy:circ.y+ny*circ.radius };
+  return new Contact(circ, poly, nx, ny, minDepth, -minDepth,
+                     circ.x+nx*circ.radius, circ.y+ny*circ.radius);
 }
 // 「動かせない物体」＝静的、または編集ツールでドラッグ中（held）。
 //   held はカーソルが位置を直接与えているので、接触で押し戻されるとカーソルとずれ、
@@ -203,7 +244,21 @@ function detectCollision(A, B, pk) {
   if (connectedPairs.has(pk)) return null;
   if (A.type==='circle' && B.type==='circle') {
     const c = collideCircleCircle(A, B);
-    return c ? [c] : null;
+    if (!c) return null;
+    // ★円どうしにも cid を付ける（形式は下の末尾と同じ。パーツは無いので -1_-1、1点だけなので 0）。
+    //   以前はここで cid を付けずに返していたので、storeWarm が id 無しを捨て、円どうしの接触
+    //   だけウォームスタートが一度も効いていなかった。8反復では重力の1サブステップぶんを
+    //   打ち消しきれず、積んだ円は位置こそ止まるが速度が残り、位置補正が毎回押し戻していた。
+    //   実測（2026-11-18・円120個の山・休眠OFF・20〜80秒の平均）：
+    //                        平均|v|        めり込み平均/最大   休眠
+    //       cid なし（旧）    51.5 mm/s      0.55 / 0.81 px      一度も入らない（速度が消えない）
+    //       cid あり          0.14〜0.5 mm/s  0.51 / 0.54 px
+    //     筒に積んだ円10個は運動E 309 mJ → 0.000 mJ、重さ10倍の大小の円60個は
+    //     めり込み最大 5.26 → 1.04 px。完全弾性の衝突（e=1・ゆりかご型）は前後とも 100.0000%。
+    //   ★山が70秒ほどかけてゆっくり締まる（重心が 1.6px 下がって止まる）のは、もともと
+    //     ウォームスタートが効いている箱の山にも同じ程度ある（10秒あたり 34〜74px）ソルバの性質。
+    c.cid = A.id + '_' + B.id + '|-1_-1|0';
+    return [c];
   }
   const out = [];
   const poly = [];
@@ -279,8 +334,8 @@ function collideCircleCircle(A, B) {
   const radSum = A.radius+B.radius;
   if (dist2 >= radSum*radSum) return null;
   const dist = Math.sqrt(dist2) || 0.001;
-  return { A, B, nx: dx/dist, ny: dy/dist, depth: radSum-dist, sep: dist-radSum,
-    cx: A.x+A.radius*(dx/dist), cy: A.y+A.radius*(dy/dist) };
+  return new Contact(A, B, dx/dist, dy/dist, radSum-dist, dist-radSum,
+                     A.x+A.radius*(dx/dist), A.y+A.radius*(dy/dist));
 }
 // ─── 手で動かしている物体 × 固定した物体 ──────────────────────────
 //   ★リモコンの〈手で動かす〉で動いている物体（D）は、押している間は逆質量0の等速物体
@@ -351,7 +406,8 @@ function _contactApplyT(c, dJ) {
 function prepareContact(c, dt) {
   const { A, B, nx, ny, cx, cy, partA, partB } = c;
   // ★見つけた時点の姿勢を控える（押し戻しを当てる点を選ぶのに使う。_contactDepthEstimate）
-  c._poseA = [A.x, A.y, A.angle]; c._poseB = [B.x, B.y, B.angle];
+  c._pAx = A.x; c._pAy = A.y; c._pAa = A.angle;
+  c._pBx = B.x; c._pBy = B.y; c._pBa = B.angle;
   c._skip = true;
   if (A.sleeping && B.sleeping) return;
   // ★held（編集ツールでドラッグ中）は静的と同じく「動かせない」。相手が正しく
@@ -406,6 +462,11 @@ function prepareContact(c, dt) {
   // ★非弾性衝突の熱の門番。「本当にぶつかった」かどうかはここで決め、熱の量そのものは
   //   ソルバのあと（finishContact）に、実際に打った力積から出す（thermal.js の★）。
   c._hit = vn0 < -restitutionVelTh(c._e > 0 ? c._e : 0);   // ★門番は反発とまったく同じ式
+  // ★μ はサブステップの間変わらない（入力は A・B の摩擦係数と開始時のすべり速度 _vt0 だけ）ので、
+  //   ここで1回だけ決める。反復のたびに frictionCoef を呼んでいたのは同じ値の作り直しで、
+  //   箱 150 個の山では simTick の 14% が solveContactFriction の中だった（2026-11-18 実測。
+  //   全デモ 300tick の状態ハッシュは書き換え前と1ビットも違わない）。
+  c._mu = frictionCoef(A, B, c._vt0);
   c._skip = false;
   // ★曲面に沿って滑るぶんは、速さを落とさず向きだけ変える（曲率が分かる円弧のみ）。
   //   1サブステップの間、物体は円弧ではなく弦の上を直進するので、その終わりには必ず
@@ -464,8 +525,8 @@ function prepareContact(c, dt) {
 function applyContactWarm(c, dt) {
   if (c._skip) return;
   const w = warmStartAllowed(c._vn0, dt) ? warmOf(c.cid) : null;
-  c._jn = w ? w.jn : 0;
-  c._jt = w ? w.jt : 0;
+  c._jn = w ? w.jn * _warmDtScale : 0;   // ★刻みが変わった tick の比（step.js の _warmDtScale の★）
+  c._jt = w ? w.jt * _warmDtScale : 0;
   c._jnMax = c._jn;
   _contactApplyN(c, c._jn);
   _contactApplyT(c, c._jt);
@@ -486,8 +547,9 @@ function solveContactFriction(c) {
   if (c._skip || !(c._kt > 0)) return;
   let dJt = -_relVelOn(c, c._tdx, c._tdy) / c._kt;
   const want = c._jt + dJt;
-  // ★μ はサブステップ開始時のすべり速度で決める（geometry.js の frictionCoef の★）
-  const lim = frictionCoef(c.A, c.B, c._vt0) * c._jn;
+  // ★μ はサブステップ開始時のすべり速度で決める（geometry.js の frictionCoef の★）。
+  //   値は prepareContact が c._mu に控えてある（そこの★）
+  const lim = c._mu * c._jn;
   const jt = Math.max(-lim, Math.min(lim, want));
   dJt = jt - c._jt; c._jt = jt;
   _contactApplyT(c, dJt);
@@ -515,6 +577,9 @@ function solveContactFriction(c) {
 //       （実測：引いて動き出す力が 49.52N → 56.88N。理論は 49.03N）。
 //       消した速度ぶんだけ戻す形にすると 49.52N のまま変わらない。場合分けも要らない。
 //   ★1サブステップに一度だけ効かせる（step.js が貫入の補正とは別に1回呼ぶ）。
+//   ☆2026-11-20 から、接触のある物体の多くは step.js の advanceBySolvedVelocity が位置を
+//     (v0+v1)/2·dt に置き直す（法線の成分まで含めて同じことをする）。この補正が受け持つのは
+//     その対象から外した物体（ばね・ロープ・棒が付いた物体・ぶつかった瞬間の物体）だけ。
 const CONTACT_DRIFT_MAX = 2;      // [px] 1サブステップで戻す上限（物理量は 0.003px 程度）
 // 戻す量 [px]。★実際に進んだ距離 vtPos·dt のうち、ソルバが消した割合 (vt0−vt1)/vt0 だけ戻す。
 //   ☆2026-09-27 まで (vtPos − vt1)·dt だった。止まっている接触（vt1≈0）では同じだが、
@@ -544,8 +609,10 @@ function correctContactTangentialDrift(c) {
   if (d >  CONTACT_DRIFT_MAX) d =  CONTACT_DRIFT_MAX;
   else if (d < -CONTACT_DRIFT_MAX) d = -CONTACT_DRIFT_MAX;
   const s = d / totalInv, tx = c._tdx, ty = c._tdy;
-  if (imA) { A.x += tx * s * imA; A.y += ty * s * imA; A._updateAABB(); }
-  if (imB) { B.x -= tx * s * imB; B.y -= ty * s * imB; B._updateAABB(); }
+  // ★step.js で位置を (v0+v1)/2·dt に置き直した物体（_posDone）は動かさない（二重になる。
+  //   step.js 冒頭の★）。相手の取り分はそのまま＝相手が戻すのは自分のぶんだけ。
+  if (imA && !A._posDone) { A.x += tx * s * imA; A.y += ty * s * imA; A._updateAABB(); }
+  if (imB && !B._posDone) { B.x -= tx * s * imB; B.y -= ty * s * imB; B._updateAABB(); }
 }
 // 反発を最後にまとめて与える。種はサブステップ開始時の接近速度 vn0 だけなので、
 //   ・反復の途中で膨らんだ接近速度が混ざらない＝跳ね返りでエネルギーが増えない
@@ -698,6 +765,10 @@ function finishContact(c) {
   //   持つので（verifyContactNormal の★）、片方だけ見ると打った力積を取りこぼす。
   addDissipatedHeat(c.A, c.B,
     impactHeatOf(c._jn + c._jv, c._vn0, _relVelOn(c, c.nx, c.ny), c._hit, c._vnPre));
+  // ★接触から受けた力（fracture.js）。法線は _jn + _jv（上の★と同じ理由）。B が +n 側
+  const jx = (c._jn + c._jv) * c.nx + c._jt * c._tdx, jy = (c._jn + c._jv) * c.ny + c._jt * c._tdy;
+  noteContactImpulse(c.A, -jx, -jy, c.cx, c.cy);
+  noteContactImpulse(c.B,  jx,  jy, c.cx, c.cy);
 }
 function _projectShapeOnAxis(body, partIndex, axis){
   if (body.type==='circle') return projectCircleOnAxis(body, axis);
@@ -754,26 +825,51 @@ function _pushApart(A, B, nx, ny, px, py, depth) {
 // 点ごとの深さの見積もり：見つけたときの sep に、その点が A・B それぞれにくっついて
 //   動いたぶんの差（法線方向）を足す。★当てる点を選ぶためだけに使う（深さそのものは
 //   形から測り直す。上の☆）。円は中心だけを追う（接点はいつも中心から法線の逆へ半径）。
-function _contactDepthEstimate(c) {
-  if (!c._poseA) return -c.sep;
-  const moved = (b, pose) => {
-    if (b.type === 'circle') return { x: b.x - pose[0], y: b.y - pose[1] };
-    const da = b.angle - pose[2], rx = c.cx - pose[0], ry = c.cy - pose[1];
-    const co = Math.cos(da), si = Math.sin(da);
-    return { x: b.x + rx*co - ry*si - c.cx, y: b.y + rx*si + ry*co - c.cy };
-  };
-  const dA = moved(c.A, c._poseA), dB = moved(c.B, c._poseB);
-  return -(c.sep + (dB.x - dA.x) * c.nx + (dB.y - dA.y) * c.ny);
+//   ★式は以前の形（moved が {x,y} を返すクロージャ）と1項ずつ同じ順で計算している。
+//     位置補正は 1サブステップに面の数 × positionIterations 回呼ばれるので、呼ぶたびに
+//     クロージャと小さなオブジェクトを4つ作っていたのをやめた（下の correctManifoldPosition の★）。
+let _mvX = 0, _mvY = 0;
+function _movedSince(b, px0, py0, pa0, c) {
+  if (b.type === 'circle') { _mvX = b.x - px0; _mvY = b.y - py0; return; }
+  const da = b.angle - pa0, rx = c.cx - px0, ry = c.cy - py0;
+  const co = Math.cos(da), si = Math.sin(da);
+  _mvX = b.x + rx*co - ry*si - c.cx; _mvY = b.y + rx*si + ry*co - c.cy;
 }
+function _contactDepthEstimate(c) {
+  if (c._pAx === undefined) return -c.sep;
+  _movedSince(c.A, c._pAx, c._pAy, c._pAa, c); const dAx = _mvX, dAy = _mvY;
+  _movedSince(c.B, c._pBx, c._pBy, c._pBa, c);
+  return -(c.sep + (_mvX - dAx) * c.nx + (_mvY - dAy) * c.ny);
+}
+// 面のまとめ方の鍵の一致。以前は `partA_partB_nx_ny` の文字列を Map の鍵にしていたので、
+//   それと同じ一致の仕方にする（数どうしは ===、ただし NaN どうしも一致。型が違えば文字列で比べる）。
+function _faceKeyEq(a, b) {
+  if (a === b) return true;
+  if (typeof a === 'number' && typeof b === 'number') return a !== a && b !== b;
+  return String(a) === String(b);
+}
+const _faceBuf = [];     // 面ごとの接触の並び（使い回す。中身は呼び出しのたびに作り直す）
+const _faceDepth = [];
 function correctManifoldPosition(cs) {
   // 同じ凸パーツの組・同じ法線の点を1つの面にまとめる（円弧の接触は1点ずつ）
-  const faces = new Map();
+  // ★Map と文字列の鍵をやめ、小さな配列を線形に探す（1つのマニフォールドの点は高々数点）。
+  //   面の並び順は「その面の点が最初に現れた順」＝Map の挿入順と同じ、円弧の点を先に
+  //   その場で直すのも以前どおり。箱 150 個の山で simTick の 21% がここだった（2026-11-18 実測。
+  //   全デモ 300tick の状態ハッシュは書き換え前と1ビットも違わない）。
+  let nf = 0;
   for (const c of cs) {
     if (c.arcK !== undefined) { correctContactPosition(c); continue; }
-    const k = c.partA + '_' + c.partB + '_' + c.nx + '_' + c.ny;
-    (faces.get(k) || (faces.set(k, []), faces.get(k))).push(c);
+    let i = 0;
+    for (; i < nf; i++) {
+      const g = _faceBuf[i][0];
+      if (_faceKeyEq(g.partA, c.partA) && _faceKeyEq(g.partB, c.partB)
+          && _faceKeyEq(g.nx, c.nx) && _faceKeyEq(g.ny, c.ny)) break;
+    }
+    if (i === nf) { if (_faceBuf.length <= nf) _faceBuf.push([]); else _faceBuf[nf].length = 0; nf++; }
+    _faceBuf[i].push(c);
   }
-  for (const f of faces.values()) {
+  for (let fi = 0; fi < nf; fi++) {
+    const f = _faceBuf[fi];
     const c0 = f[0], A = c0.A, B = c0.B;
     if (A.sleeping && B.sleeping) continue;
     if (_pinned(A) && _pinned(B)) continue;
@@ -782,11 +878,18 @@ function correctManifoldPosition(cs) {
     const pa = _projectShapeOnAxis(A, c0.partA, axis), pb = _projectShapeOnAxis(B, c0.partB, axis);
     const depth = pa.max - pb.min;
     if (!(depth > 0)) continue;
-    const d = f.map(_contactDepthEstimate), dMax = Math.max(...d);
+    // dMax は Math.max(...d) と同じ値（NaN が1つでもあれば NaN）
+    let dMax = -Infinity;
+    for (let i = 0; i < f.length; i++) {
+      const v = _faceDepth[i] = _contactDepthEstimate(f[i]);
+      if (v !== v || dMax !== dMax) dMax = NaN; else if (v > dMax) dMax = v;
+    }
     let px = 0, py = 0, k = 0;
-    f.forEach((c, i) => { if (d[i] >= dMax - 0.5) { px += c.cx; py += c.cy; k++; } });
+    for (let i = 0; i < f.length; i++) if (_faceDepth[i] >= dMax - 0.5) { px += f[i].cx; py += f[i].cy; k++; }
     _pushApart(A, B, c0.nx, c0.ny, px / k, py / k, depth);
   }
+  // ★使い回しの配列に接触を握らせたままにしない（次の呼び出しまで GC できなくなる）
+  for (let fi = 0; fi < nf; fi++) _faceBuf[fi].length = 0;
 }
 // 1点ぶん（円弧の接触はここ。真円の法線と深さをその場で測り直す）
 function correctContactPosition(c) {

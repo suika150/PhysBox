@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 
 (async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
-  const url = pathToFileURL(path.resolve(__dirname, '..', 'physBox.html')).href;
+  const url = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
   console.log(' 密度 │ セグメント │ 内部サブステップ │ ms/tick │ 60fps に対する余裕');
   for (const nd of [10, 20, 37, 60, 120]) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

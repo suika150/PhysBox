@@ -67,9 +67,9 @@ function pvGraphBuildPanel(g) {
     '<canvas></canvas>' +
     '<div class="vg-controls">' +
       '<span class="vg-grp" title="どの2つの状態量を軸に取るかを選びます。時間は軸に出てきません（状態が平面をどう動いたかの図です）">軸</span>' +
-      '<label class="vg-check"><input type="radio" name="pvmode' + g.id + '" class="pv-pv">P–V</label>' +
-      '<label class="vg-check"><input type="radio" name="pvmode' + g.id + '" class="pv-pt">P–T</label>' +
-      '<label class="vg-check"><input type="radio" name="pvmode' + g.id + '" class="pv-vt">V–T</label>' +
+      '<label class="vg-check"><input type="radio" name="pvmode' + Number(g.id) + '" class="pv-pv">P–V</label>' +
+      '<label class="vg-check"><input type="radio" name="pvmode' + Number(g.id) + '" class="pv-pt">P–T</label>' +
+      '<label class="vg-check"><input type="radio" name="pvmode' + Number(g.id) + '" class="pv-vt">V–T</label>' +
     '</div>' +
     '<div class="vg-controls">' +
       '<label class="vg-check" title="いまの温度での PV = nRT を薄い線で重ねます。断熱変化だと、たどった線がこの線より急になります（PV^γ = 一定）"><input type="checkbox" class="pv-iso">等温線を重ねる</label>' +
@@ -81,7 +81,7 @@ function pvGraphBuildPanel(g) {
   host.appendChild(panel);
   g.panel = panel;
   g.canvas = panel.querySelector('canvas');
-  g.ctx = g.canvas.getContext('2d');
+  g.ctx = themeHookContext(g.canvas.getContext('2d'), true);   // ★パネルの配色に合わせて色を読み替える（theme.js）
   g.titleEl = panel.querySelector('.vg-title');
   g.statusEl = panel.querySelector('.vg-status');
   g.recBtn = panel.querySelector('.pv-rec');

@@ -112,6 +112,7 @@ function updateUndoRedoButtons() {
 }
 function clearScene() {
   pushUndo();
+  clearSharedCredit();   // ★共有シーンの作者の表示も別のシーンへは持ち越さない（js/app/share.js）
   // ★これから来るシーンは、いま積んだ内容とは別物（デモ・新規作成・シーン読込は必ずここを
   //   通る）＝ その新しい配置へ戻る手はまだ履歴に無い。だから旗を立て直す（pushUndo が
   //   下ろした直後に、ここで上げる）。デモを開いて ▶ を押し、動かしたあと「戻る」で

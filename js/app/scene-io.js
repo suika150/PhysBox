@@ -6,7 +6,7 @@
 //   ★対象は id で持つ（物体・気体室・回路素子）。読み込み時に居ないものは黙って飛ばす
 //     （その物体を消してから保存したシーンでも、残りのグラフは開ける）。
 const GRAPH_OPT_KEYS = {
-  vel:  ['showPos','showVel','showAcc','showX','showY','showMag','autoStart',
+  vel:  ['showPos','showVel','showAcc','showFrc','showX','showY','showMag','autoStart',
          'posOriginX','posOriginY','posOriginMag'],
   ene:  ['mode','breakdown','showKt','showKr','showUg','showUs','showUgg','showUe','showMech'],
   mom:  ['comp','showParts','showRef'],
@@ -16,6 +16,14 @@ const GRAPH_OPT_KEYS = {
   circ: ['showV','showI','showPhasor','stacked','perRowScale','iv','ivSwap'],
   wave: ['showU','showL','showF','sweep'],
 };
+function _pickGraphOpts(kind, opts) {
+  const o = {};
+  for (const k of GRAPH_OPT_KEYS[kind] || []) {
+    const v = opts && opts[k];
+    if (v === null || ['number', 'boolean', 'string'].includes(typeof v)) o[k] = v;
+  }
+  return o;
+}
 function _graphOpts(kind, g) {
   const o = {};
   for (const k of GRAPH_OPT_KEYS[kind]) o[k] = g[k];
@@ -75,7 +83,10 @@ function closeAllGraphWindows() {
 function restoreGraphs(list) {
   closeAllGraphWindows();                       // 前のシーンの窓は残さない
   const alive = ids => (ids || []).filter(id => objects.some(o => o.id === id));
-  for (const d of list || []) {
+  for (const raw of list || []) {
+    // ★窓の設定は保存したキー（GRAPH_OPT_KEYS）の値だけを戻す。*GraphNew は opts を Object.assign で
+    //   窓の中身に重ねるので、ほかのキー（id・panel など）が来ると窓の内部を書き換えてしまう
+    const d = Object.assign({}, raw, { opts: _pickGraphOpts(raw.kind, raw.opts) });
     let g = null;
     if (d.kind === 'vel') {
       const b = objects.find(o => o.id === d.bodyId);
@@ -133,7 +144,15 @@ async function saveScene() {
     sceneName || '無題のシーン');
   if (name === null) return;                    // キャンセル
   setSceneName(name);
-  const data = JSON.stringify({
+  const data = JSON.stringify(serializeScene());
+  const blob = new Blob([data], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = _sceneFileName(sceneName); a.click();
+}
+// シーン全体を保存形式のオブジェクトにする。★ファイルへの保存と共有（js/app/share.js）の両方がここを通る
+//   ＝ 保存形式を1か所で持つ（共有側に写しを作ると、項目を足したときに片方だけ古くなる）
+function serializeScene() {
+  return {
     unitVersion: UNIT_VERSION, ppm: PPM,
     name: sceneName,
     graphs: serializeGraphs(),   // ★開いているグラフの窓（中身は保存しない）
@@ -163,10 +182,7 @@ async function saveScene() {
                             on: sceneCamera.on } : null,
     emWorld: { coulombOn:world.coulombOn, coulombK:world.coulombK },
     world, ground
-  });
-  const blob = new Blob([data], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = _sceneFileName(sceneName); a.click();
+  };
 }
 // ★読み込むのは、同じ版の saveScene() が書いたファイルだけ（この系はまだ外に出ていないので、
 //   古い形式のファイルは存在しない）。だから欠けたキーを1つずつ埋め直す処理は持たない：
@@ -180,59 +196,7 @@ function loadScene() {
     const r=new FileReader();
     r.onload=ev=>{
       try{
-        const data=JSON.parse(ev.target.result);
-        // ★clearScene を通らずに中身を入れ替えるので、控えの後始末はここで同じことをする（history.js の★）
-        savedState = null; _lastDemo = null;
-        objects=data.objects.map(d=>new Body(d));
-        joints=deserializeJoints(data.joints, objects);
-        lasers=deserializeLasers(data.lasers, objects);
-        waveSources=deserializeWaveSources(data.waves, objects);
-        slinkies=deserializeSlinkies(data.slinkies, objects);
-        emFields=deserializeEMFields(data.emFields);
-        heatFields=deserializeHeatFields(data.heatFields);
-        flowFields=deserializeFlowFields(data.flowFields);
-        syncFlowCarry();      // ★速度の合成の下駄を組み直す（保存してある速度は地面から見た速度）
-        finishAnnotEdit(true);
-        annotations=deserializeAnnotations(data.annotations);
-        selectedAnnotation=null; cancelAnnotInteractions();
-        deserializeCircuit(data.circuit);
-        Object.assign(world, data.emWorld);
-        waveField.geoKey=''; resetWaveField();
-        Object.assign(world, data.world);
-        Object.assign(ground, data.ground);
-        // 全体設定タブの欄はまとめて world / ground から作り直す
-        // （以前はここで個別に書いていたので、空気密度・反復回数などが古いまま残った）
-        syncWorldPanel();
-        particles = deserializeParticles(data.particles);
-        deserializeGasChambers(data.gasChambers);
-        deserializePistonVessels(data.pistonVessels);
-        deserializePrograms(data.programs);                 // ★プログラム（窓も作り直す）
-        deserializeRemotes(data.remotes);                   // ★リモコン（同上）
-        deserializeCounters(data.counters);                 // ★通過カウンタ（同上）
-        deserializeSpdMeters(data.spdMeters);               // ★速さの分布計（同上）
-        deserializeCircTables(data.circTables);             // ★回路の表（同上）
-        pvGraphs.slice().forEach(pvGraphClose);             // 消えた気体室のグラフを畳む
-        refreshGridButton();   // シーンごとにグリッド間隔が違うのでボタンの表示も合わせる
-        // ★カメラは物体が揃ったあとで戻す（接続先を id で引くため）
-        detachCamera();
-        // ★選んだ物体を追うのも切る。カメラと別のスイッチなので detachCamera では切れない
-        //   （followIds の id は前のシーンのもので、使い回された id が無関係な物体を指す）
-        followEnabled = false; followIds = [];
-        resetStrobe();        // ★ストロボも切る（clearScene と同じ。保存形式には入っていない）
-        if (data.camera) {
-          const cb = objects.find(o => o.id === data.camera.bodyId);
-          if (cb) {
-            // ★upAngle はそのまま戻す（接続した瞬間の姿勢から決まる値なので、
-            //   attachCamera で計算し直すと保存時と違う向きになる）
-            attachCamera(cb, data.camera.upAngle === null ? 'world' : 'body');
-            sceneCamera.upAngle = data.camera.upAngle;
-            if (data.camera.on === false) setCameraOn(false);
-          }
-        }
-        setSceneName(data.name || '');    // 名前を空で保存したシーンは無題に戻す
-        // ★グラフの復元は最後。対象（物体・気体室・回路素子）が揃ってからでないと、
-        //   居ないものとして飛ばされてしまう
-        restoreGraphs(data.graphs);
+        applySceneData(JSON.parse(ev.target.result));
       }catch(e){
         appAlert('シーンを読み込み', 'シーンの読み込みに失敗しました。'
                + '<div class="am-note">PhysBox で保存した .json ファイルか確認してください。<br>'
@@ -242,6 +206,96 @@ function loadScene() {
     r.readAsText(f);
   };
   inp.click();
+}
+// 保存形式のオブジェクトでシーンを丸ごと入れ替える。★ファイルからの読み込みと共有シーン（js/app/share.js）の
+//   両方がここを通る。壊れたデータは例外を投げる（受けて知らせるのは呼ぶ側）
+// ★読み込むシーンの形の関所。共有（js/app/share.js）で他人のシーンも開くので、ファイルからの読み込みも含めて必ず通す：
+//   ・id / 〜Id / 〜Ids は数（か null）だけ。id は窓の見出しや onclick の引数に入るので、
+//     文字が来たら開かない（実測：デモ 260 件はすべて数）
+//   ・__proto__ / constructor / prototype のキーは捨てる。JSON.parse は __proto__ を普通のキーとして作り、
+//     Object.assign(world, …) がそれを親の差し替えとして受け取ってしまう
+//   文字を HTML に出す側は、それぞれの場所で escHtml / textContent を通してある（ここでは文字を書き換えない）
+function sanitizeSceneData(v, key) {
+  if (Array.isArray(v)) return v.map(x => sanitizeSceneData(x, key));
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      o[k] = sanitizeSceneData(v[k], k);
+    }
+    return o;
+  }
+  if (/^id$|Id$|Ids$/.test(key || '') && v !== null && typeof v !== 'number')
+    throw new Error('シーンの形式が正しくありません（' + key + '）');
+  return v;
+}
+// world / ground へ戻すとき、今の値と型が違うものは捨てる（数の欄に文字が入ると表示も計算も壊れる）。
+//   ★今の値が null・未定義のキーと、今は無いキーはそのまま入れる＝ world に設定を足しても、ここは直さなくてよい
+function _assignSameType(target, src) {
+  for (const k of Object.keys(src || {})) {
+    const cur = target[k], v = src[k];
+    if (cur != null && v != null && typeof cur !== typeof v) continue;
+    target[k] = v;
+  }
+}
+function applySceneData(data) {
+  data = sanitizeSceneData(data, '');
+  clearSharedCredit();   // ★前に開いた共有シーンの作者の表示（js/app/share.js）。共有から開くときは後で付け直す
+  // ★clearScene を通らずに中身を入れ替えるので、控えの後始末はここで同じことをする（history.js の★）
+  savedState = null; _lastDemo = null;
+  objects=data.objects.map(d=>new Body(d));
+  joints=deserializeJoints(data.joints, objects);
+  lasers=deserializeLasers(data.lasers, objects);
+  waveSources=deserializeWaveSources(data.waves, objects);
+  slinkies=deserializeSlinkies(data.slinkies, objects);
+  emFields=deserializeEMFields(data.emFields);
+  heatFields=deserializeHeatFields(data.heatFields);
+  flowFields=deserializeFlowFields(data.flowFields);
+  syncFlowCarry();      // ★速度の合成の下駄を組み直す（保存してある速度は地面から見た速度）
+  finishAnnotEdit(true);
+  annotations=deserializeAnnotations(data.annotations);
+  selectedAnnotation=null; cancelAnnotInteractions();
+  deserializeCircuit(data.circuit);
+  _assignSameType(world, data.emWorld);
+  waveField.geoKey=''; resetWaveField();
+  _assignSameType(world, data.world);
+  // ★以前のシーンは背景色（bgColor）を持っていた。いまの背景は配色（黒／白。theme.js）が
+  //   決めるので捨てる。残すと保存のたびに意味の無い値を書き出し続ける。
+  delete world.bgColor;
+  _assignSameType(ground, data.ground);
+  // 全体設定タブの欄はまとめて world / ground から作り直す
+  // （以前はここで個別に書いていたので、空気密度・反復回数などが古いまま残った）
+  syncWorldPanel();
+  particles = deserializeParticles(data.particles);
+  deserializeGasChambers(data.gasChambers);
+  deserializePistonVessels(data.pistonVessels);
+  deserializePrograms(data.programs);                 // ★プログラム（窓も作り直す）
+  deserializeRemotes(data.remotes);                   // ★リモコン（同上）
+  deserializeCounters(data.counters);                 // ★通過カウンタ（同上）
+  deserializeSpdMeters(data.spdMeters);               // ★速さの分布計（同上）
+  deserializeCircTables(data.circTables);             // ★回路の表（同上）
+  pvGraphs.slice().forEach(pvGraphClose);             // 消えた気体室のグラフを畳む
+  refreshGridButton();   // シーンごとにグリッド間隔が違うのでボタンの表示も合わせる
+  // ★カメラは物体が揃ったあとで戻す（接続先を id で引くため）
+  detachCamera();
+  // ★選んだ物体を追うのも切る。カメラと別のスイッチなので detachCamera では切れない
+  //   （followIds の id は前のシーンのもので、使い回された id が無関係な物体を指す）
+  followEnabled = false; followIds = [];
+  resetStrobe();        // ★ストロボも切る（clearScene と同じ。保存形式には入っていない）
+  if (data.camera) {
+    const cb = objects.find(o => o.id === data.camera.bodyId);
+    if (cb) {
+      // ★upAngle はそのまま戻す（接続した瞬間の姿勢から決まる値なので、
+      //   attachCamera で計算し直すと保存時と違う向きになる）
+      attachCamera(cb, data.camera.upAngle === null ? 'world' : 'body');
+      sceneCamera.upAngle = data.camera.upAngle;
+      if (data.camera.on === false) setCameraOn(false);
+    }
+  }
+  setSceneName(data.name || '');    // 名前を空で保存したシーンは無題に戻す
+  // ★グラフの復元は最後。対象（物体・気体室・回路素子）が揃ってからでないと、
+  //   居ないものとして飛ばされてしまう
+  restoreGraphs(data.graphs);
 }
 let _objDragId = null;   // ★並べ替え中の物体ID
 // 描画順（objects 配列の順）を入れ替える。配列の後ろほど手前に描かれ、
@@ -374,7 +428,8 @@ function updateSceneList() {
     d.style.background  = isSel ? 'rgba(79,195,247,.15)' : '';
     d.style.borderColor = isSel ? 'var(--accent)' : 'transparent';
     d.innerHTML = (order ? `<span style="color:var(--text2)">⠿</span> ` : '') +
-                  `<span style="color:var(--text2)">${icon}</span> <span style="color:var(--text)">${label}</span>`;
+                  `<span style="color:var(--text2)">${icon}</span> <span style="color:var(--text)">${escHtml(label)}</span>`;
+    // ★label は物体の名前・注釈の文字などシーンの中身そのまま。他人のシーン（js/app/share.js）も開くので必ず逃がす
     // withoutPropsTabJump：一覧から選ぶときはプロパティタブへ飛ばない（飛ぶと一覧が消える）
     d.onclick = () => withoutPropsTabJump(() => {
       pick(); if (focus) { cam.x = focus.x; cam.y = focus.y; } updateSceneList();
@@ -417,7 +472,7 @@ function updateSceneList() {
     div.style.background=selectedIds.has(b.id)?'rgba(79,195,247,.15)':'';
     div.style.borderColor=selectedIds.has(b.id)?'var(--accent)':'transparent';
     const shape={circle:'○',box:'□',polygon:'⬡'}[b.type]||'?';
-    div.innerHTML=`<span style="color:var(--text2)">⠿</span> <span style="color:var(--text2)">${shape}</span> <span style="color:var(--text)">${b.label||'Object '+b.id}</span> <span style="color:var(--text2);font-size:10px">${b.isStatic?"[固]":b.constVel?"[等速]":""}</span>`;
+    div.innerHTML=`<span style="color:var(--text2)">⠿</span> <span style="color:var(--text2)">${shape}</span> <span style="color:var(--text)">${escHtml(b.label||'Object '+b.id)}</span> <span style="color:var(--text2);font-size:10px">${b.isStatic?"[固]":b.constVel?"[等速]":""}</span>`;
     div.draggable = true;
     div.addEventListener('dragstart', ev => {
       _objDragId = b.id;
@@ -575,7 +630,13 @@ function updateSceneList() {
     const nf = particles.filter(p => p.type === 'fluid').length;
     const d = document.createElement('div');
     d.style.cssText = 'padding:3px 4px;color:var(--text2)';
-    d.textContent = `液体 ${nf} ／ 気体 ${particles.length - nf}`;
+    // ★液体は種類ごとに数える（水だけなら従来どおり「液体 N」）
+    const byLiq = {};
+    for (const p of particles) if (p.liq) byLiq[p.liq] = (byLiq[p.liq] || 0) + 1;
+    const ks = Object.keys(byLiq);
+    const liqTxt = ks.length > 1 || (ks.length === 1 && ks[0] !== 'water')
+      ? ks.map(k => `${LIQUID_LABELS[k] || k} ${byLiq[k]}`).join('・') : `液体 ${nf}`;
+    d.textContent = `${liqTxt} ／ 気体 ${particles.length - nf}`;
     el.appendChild(d);
   }
   _sceneSig = sceneListSignature();

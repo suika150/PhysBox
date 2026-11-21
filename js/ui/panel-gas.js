@@ -65,8 +65,9 @@ function syncGasRows(ch) {
       if (v && o.id === v.pistonId) continue;
       if (!(o.heatCap > 0)) continue;
       const isCyl = !!(v && o.id === v.cylinderId);
-      opts.push('<option value="' + o.id + '">'
-              + (isCyl ? 'この気体の器' : (o.label || ('物体 ' + o.id))) + '</option>');
+      // ★物体の名前はシーンの中身なので逃がす
+      opts.push('<option value="' + escHtml(o.id) + '">'
+              + escHtml(isCyl ? 'この気体の器' : (o.label || ('物体 ' + o.id))) + '</option>');
     }
     sel.innerHTML = opts.join('');
     sel.value = ch.wallId != null ? String(ch.wallId) : '';
@@ -85,7 +86,7 @@ function syncGasRows(ch) {
   if (note) {
     const A = ch.areaM2();
     const bal = (world.atmPressure + (p ? p.mass * 9.8 / A : 0)) / 1000;
-    note.innerHTML = `断面積 A = ${A.toFixed(4)} m²（内径 × 奥行き ${world.depth} m）<br>`
+    note.innerHTML = `断面積 A = ${A.toFixed(4)} m²（内径 × 奥行き ${Number(world.depth)} m）<br>`
       + `重りを載せなければ P = 大気圧 + mg/A = <b>${bal.toFixed(2)} kPa</b> で釣り合います<br>`
       + '<span style="color:var(--text2)">内径・全長は器を、質量・摩擦・熱容量は蓋を'
       + 'クリックして選ぶとそちらのプロパティに出ます</span>';
