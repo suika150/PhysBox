@@ -131,6 +131,7 @@ let particleToolKind = 'fluid';      // 'fluid'=液体 / 'gas'=気体
 // ★液体を置くときの種類（'water'/'oil'/'brine'。particles.js の LIQUID_TYPES）。
 //   ツール名は 'fluid' のまま増やさない（液体はどれも同じ SPH で動き、違うのは密度と材料定数だけ）。
 let particleLiquid = 'water';
+let particleLiquidDensity = null;    // [kg/m³] 置くときの密度。null ならその種類の密度のまま
 // ★流れの場（矩形）。風・水流。中の物体は相対速度に応じた抗力を受け、流速へ漸近する
 //   （js/physics/flow-field.js）。系の外から仕事を入れる入口という点は加熱・冷却と同じ。
 let flowFields = [];

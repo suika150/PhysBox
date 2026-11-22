@@ -1004,6 +1004,13 @@ function toggleParticleMenu(e) {
     </div>
     <div class="material-grid" id="pt-kinds" style="margin-bottom:4px"></div>
     <div class="material-grid" id="pt-liquids" style="margin-bottom:4px"></div>
+    <div id="pt-rho-row" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span style="font-size:10px;color:var(--text2)">密度</span>
+      <input type="number" id="pt-rho" class="prop-input" style="width:76px" step="10"
+             min="${LIQUID_DENSITY_MIN}" max="${LIQUID_DENSITY_MAX}">
+      <span style="font-size:10px;color:var(--text2)">kg/m³</span>
+      <button class="btn-small" id="pt-rho-reset" style="margin-left:auto" title="選んだ種類の密度に戻します">既定</button>
+    </div>
     <div id="pt-kind-note" style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.5"></div>
     <div style="font-size:10px;color:var(--text2);margin-bottom:4px">
       1度に置く数: <span id="pt-spawn-val" style="color:var(--accent)">${particleSpawnPerEvent}</span> 個
@@ -1065,7 +1072,7 @@ function toggleParticleMenu(e) {
       b.className = 'mat-btn' + (k === particleLiquid ? ' active' : '');
       b.textContent = LIQUID_LABELS[k];
       b.title = `密度 ${LIQUID_TYPES[k].density} kg/m³`;
-      b.onclick = () => { particleLiquid = k; paint(); };
+      b.onclick = () => { particleLiquid = k; particleLiquidDensity = null; paint(); };   // 種類を選ぶと密度はその種類の値に戻る
       lg.appendChild(b);
     }
     // ★2つは別の計算で動く（混ぜられない）ことを、選んだ側の言葉で1行だけ書く
@@ -1074,13 +1081,29 @@ function toggleParticleMenu(e) {
       oil:   '油の粒（920 kg/m³）。水より軽いので、水と入れると上に分かれます。',
       brine: '食塩水の粒（1200 kg/m³）。水より重いので、水の下にたまります。',
     };
-    menu.querySelector('#pt-kind-note').textContent = particleToolKind === 'fluid'
-      ? LIQ_NOTE[particleLiquid]
-      : '気体の分子。減速せずに飛び回り、壁にぶつかり続けます。';
+    // ★密度は種類とは別に打ち替えられる（particles.js の LIQUID_VARIANTS の★）。
+    //   打ち替えても、混ざる／混ざらない・比熱・色はその種類のまま。
+    const rr = menu.querySelector('#pt-rho-row');
+    rr.style.display = particleToolKind === 'fluid' ? 'flex' : 'none';
+    const rhoNow = liquidPrm(particleLiquid, particleLiquidDensity).density;
+    menu.querySelector('#pt-rho').value = rhoNow;
+    const custom = rhoNow !== LIQUID_TYPES[particleLiquid].density;
+    menu.querySelector('#pt-kind-note').textContent = particleToolKind !== 'fluid'
+      ? '気体の分子。減速せずに飛び回り、壁にぶつかり続けます。'
+      : custom
+      ? `密度 ${rhoNow} kg/m³ の液体（${LIQUID_LABELS[particleLiquid]}の性質のまま密度だけ変えたもの）。` +
+        (rhoNow < 1000 ? '水より軽いので水の上に分かれます。' : rhoNow > 1000 ? '水より重いので水の下にたまります。' : '水と同じ重さです。')
+      : LIQ_NOTE[particleLiquid];
     if (!particleColor) showParticleSwatch(particleToolDefaultColor());
     syncParticleToolButton();        // 左ツールバーのアイコン
   };
   paint();
+  menu.querySelector('#pt-rho').addEventListener('change', ev => {
+    const v = parseFloat(ev.target.value);
+    particleLiquidDensity = Number.isFinite(v) ? liquidPrm(particleLiquid, v).density : null;   // 範囲に丸める
+    paint();
+  });
+  menu.querySelector('#pt-rho-reset').addEventListener('click', () => { particleLiquidDensity = null; paint(); });
   // 現在数の表示。窓が消えたら自分で止まる（インターバルの取り残しを防ぐ）
   const tick = setInterval(() => {
     const el = document.getElementById('pt-now');

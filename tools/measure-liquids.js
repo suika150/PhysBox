@@ -156,9 +156,12 @@ window.__separate = function (heavy, light, total, ticks, control, init) {
   }
   // 最後の 300tick：界面と液面の時間平均
   const all = () => true;
-  let iSum = 0, iN = 0, lSum = 0, sSum = 0;
+  let iSum = 0, iN = 0, lSum = 0, sSum = 0, vmSum = 0, bad = 0;
   for (let i = 0; i < 300; i++) {
     simTick();
+    let vm = 0;
+    for (const p of particles) { const v = Math.hypot(p.vx, p.vy); if (v > vm) vm = v; if (!Number.isFinite(v)) bad++; }
+    vmSum += vm;
     const yi = __interface(floorY, heavy, all);
     if (yi !== null) { iSum += floorY - yi; iN++; }
     lSum += floorY - __level(all);
@@ -173,8 +176,10 @@ window.__separate = function (heavy, light, total, ticks, control, init) {
     if (p.liq === heavy && p.y < yi - STEP) strayH++;
   }
   if (control) LIQUID_TYPES[light].mrel = LIQUID_TYPES[light].density / LIQUID_TYPES.water.density;
+  let out = 0;
+  for (const p of particles) if (Math.abs(p.x) > IW + 2 || p.y < floorY - IH - 40) out++;
   return { nH, nL, series, iface: iN ? iSum / iN : null, surf: lSum / 300, S: sSum / 300,
-           strayL, strayH };
+           strayL, strayH, vmax: vmSum / 300, out, bad };
 };
 // 箱1個を液体に浮かべる。layers = [[液体, 高さ], …]（下から）
 window.__sink = function (layers, d, settle, avg) {
@@ -257,6 +262,7 @@ window.__sink = function (layers, d, settle, avg) {
                      { 量: '液面の高さ [px]', 実測: +r.surf.toFixed(1), 理論: +sfTh.toFixed(1) },
                      { 量: '最後の300tick の S', 実測: +r.S.toFixed(3), 理論: 1 }]);
       console.log(`取り残し：界面より下の ${light} ${r.strayL} 粒 ／ 界面より上の ${heavy} ${r.strayH} 粒`);
+      console.log(`最後の300tick の速さ最大の平均 ${r.vmax.toFixed(1)} px/s ／ コップの外 ${r.out} 粒 ／ 数値の破綻 ${r.bad}`);
     }
   }
 

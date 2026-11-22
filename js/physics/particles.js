@@ -129,10 +129,49 @@ for (const a in LIQUID_TYPES) {
     ta.adh[b] = 1 - ift / (LIQUID_SURF_TENSION[a] + LIQUID_SURF_TENSION[b]);
   }
 }
-// シーンや UI から来た液体の名前 → パラメータ（知らない名前・__proto__ などは水に倒す）
-function liquidPrm(name) {
-  return (typeof name === 'string' && Object.prototype.hasOwnProperty.call(LIQUID_TYPES, name))
-       ? LIQUID_TYPES[name] : LIQUID_TYPES.water;
+// ── 密度を打ち替えた液体（「水だけど密度 1050」のような変種）──────────────
+//   ★種類（水・油・食塩水）は材料の性質（表面張力・界面張力 κ・比熱・熱伝導・熱膨張・色）を決め、
+//     密度だけを別に指定できる。密度が効くのは「1粒の質量（mrel）」と浮力の層の重みだけなので
+//     （LIQUID_TYPES の★）、どの値を入れても物理の筋は通る。
+//     例：食塩水を元に 1050 ＝ 薄い食塩水（水と混ざる性質のまま）、油を元に 800 ＝ 軽い油。
+//   ★変種は (種類, 密度) ごとに1つだけ作って使い回す。粒ごとに作ると「同じ液体どうし」の
+//     判定（④・②の t === pj.prm）が外れ、同じ液体の組まで質量の割り算を通ることになる。
+//   ★範囲は LIQUID_DENSITY_MIN〜MAX。根拠は下の定数の★（極端な密度で測った）。
+const LIQUID_VARIANTS = Object.create(null);
+// ★密度の範囲：試した端まで。水の上に注いで 1200tick（乱数固定。tools/measure-liquids.js の
+//   --liq で密度を上書き）、どの条件でもコップの外へ出た粒 0・数値の破綻 0 だった：
+//       注いだ液体の密度   50     100    300   ｜ 1200   3000   13600  20000
+//       最後の速さ最大     19     22     23    ｜ 69     204    257    217  [px/s]（300tick 平均）
+//       分離度 S          0.995  0.992  0.986 ｜ 0.31   0.61   0.49   0.41（上に浮く／下へ沈んでいく途中）
+//   質量比は 1:400 まで開くが、補正の配分（④）は m_j/(m_i+m_j) で 0〜1 に収まり、
+//   動ける量の上限（D の頭打ち）も変わらないので崩れない。
+//   水銀に相当する 13600 に鉄（7874）の箱を浮かべると沈み具合 57.9%（理論 57.9%）。
+//   実在の液体はほぼこの中に入る（液体水素 71〜水銀 13,546）。外は試していないので出さない。
+//   ☆軽い液体ほど層が厚く出る（水の上の 50 の層は理論より 14% 厚い）。この SPH は自重で
+//     1割ほど縮む（restArea はその縮んだ水で測った値）のに、軽い液体は重みが小さく縮まないため。
+const LIQUID_DENSITY_MIN = 50, LIQUID_DENSITY_MAX = 20000;   // [kg/m³]
+// シーンや UI から来た液体の名前（と密度）→ パラメータ（知らない名前・__proto__ などは水に倒す）
+function liquidPrm(name, density) {
+  const base = (typeof name === 'string' && Object.prototype.hasOwnProperty.call(LIQUID_TYPES, name))
+             ? LIQUID_TYPES[name] : LIQUID_TYPES.water;
+  if (typeof density !== 'number' || !Number.isFinite(density)) return base;
+  const rho = Math.round(Math.min(LIQUID_DENSITY_MAX, Math.max(LIQUID_DENSITY_MIN, density)));
+  if (rho === base.density) return base;
+  const key = base.liq + '@' + rho;
+  let v = LIQUID_VARIANTS[key];
+  if (!v) {
+    v = Object.assign({}, base, { density: rho, mrel: rho / PARTICLE_TYPES.fluid.density });
+    LIQUID_VARIANTS[key] = v;            // liq・adh・色は元の種類のものをそのまま持つ
+  }
+  return v;
+}
+// 粒子の液体を置き換える（右パネルの密度欄）。印の色（型の既定と違う色）はそのまま残す
+function setParticleLiquid(p, name, density) {
+  if (p.type !== 'fluid') return;
+  const marked = p.color !== p.prm.color;
+  p.prm = liquidPrm(name, density);
+  p.liq = p.prm.liq;
+  if (!marked) p.color = p.prm.color;
 }
 // ── 1粒子が代表する質量と熱容量 ────────────────────────────────────
 //   質量 = 密度 × 静止時に1粒子が占める面積 × 奥行き。
@@ -146,7 +185,7 @@ function liquidPrm(name) {
 //     熱容量も同じく分子の数から出る（C = N k f/2）。奥行きにも restArea にも依らない。
 function refreshParticleThermal() {
   const k = PX2M * PX2M * world.depth;
-  const all = Object.values(PARTICLE_TYPES).concat(Object.values(LIQUID_TYPES));
+  const all = Object.values(PARTICLE_TYPES).concat(Object.values(LIQUID_TYPES), Object.values(LIQUID_VARIANTS));
   for (const t of all) {
     if (t.kinetic) {
       t._massKg = MOL_PER_DOT * MOL_MASS;
@@ -159,11 +198,11 @@ function refreshParticleThermal() {
 }
 // ─── SPH Fluid/Gas Particle ──────────
 class Particle {
-  constructor(x, y, type='fluid', liq) {
+  constructor(x, y, type='fluid', liq, density) {
     this.id = ++uidCounter;
     this.type = type;
     // ★液体は種類（liq）でパラメータを引く（LIQUID_TYPES の★）。気体は liq を持たない
-    const t = type === 'fluid' ? liquidPrm(liq || 'water')
+    const t = type === 'fluid' ? liquidPrm(liq || 'water', density)
                                : (PARTICLE_TYPES[type] || PARTICLE_TYPES.fluid);
     this.prm = t;                  // 型パラメータ参照
     this.liq = t.liq || null;      // 液体の種類（'water'/'oil'/'brine'）。気体は null
@@ -241,6 +280,7 @@ function serializeParticles() {
     if (p.color !== p.prm.color) o.c = p.color;
     // ★液体の種類は水以外のときだけ書く（水だけのシーンのファイルは1バイトも太らない）
     if (p.liq && p.liq !== 'water') o.l = p.liq;
+    if (p.liq && p.prm.density !== liquidPrm(p.liq).density) o.ld = p.prm.density;   // 密度を打ち替えた液体だけ
     // ★軌跡は「付いているかどうか」だけ保存する。溜めた点は保存しない（物体の
     //   tracePoints と同じ扱い＝見せ方だけの一時状態で、読み込み直後は空でよい）。
     if (p.tracerEnabled) { o.tr = 1; o.tc = p.tracerColor; o.td = p.tracerDuration; }
@@ -252,7 +292,7 @@ function deserializeParticles(arr) {
   if (!Array.isArray(arr)) return out;
   for (const d of arr) {
     if (!d) continue;
-    const p = new Particle(d.x || 0, d.y || 0, d.t || d.type || 'fluid', d.l);   // l 無し＝水
+    const p = new Particle(d.x || 0, d.y || 0, d.t || d.type || 'fluid', d.l, d.ld);   // l 無し＝水、ld 無し＝その種類の密度
     p.vx = d.vx || 0; p.vy = d.vy || 0;
     p.px = p.x; p.py = p.y;
     if (d.T !== undefined) p.T = d.T;      // 無ければ既定の20℃（熱を知らない古いシーン）
@@ -275,6 +315,7 @@ const SPH = {
   h: 26,
   maxSpeed: 2000,           // [px/s]（旧500 は 1/6 重力前提。自由落下1秒で ~980 px/s に達する）
   relaxIters: 2,
+  relaxFlipPerTick: false,  // ④の向きの並びも tick ごとに入れ替えるか（★④の頭の注。false が既定・true は対照）
   // ★走査の向きを交互に反転するための旗（②と④が見る）。理由は②の★に書いた。
   _flip: false,
   // ── 液体の熱膨張の誇張倍率（1＝実物どおりの β。なぜ 1 では足りないかは①の☆）──
@@ -805,7 +846,7 @@ const SPH = {
     //      後半では最後に回るので、一次の偏りが打ち消し合う。計算量は増えない
     //      （relaxIters を上げる手も効くが、実測 1tick 6.54ms → 22.79ms で 3.5 倍かかる）。
     //    ★②は tick に1回しか回らないので tick ごとに反転する（_flip）。④は反復ごとに
-    //      反転するので、relaxIters が偶数なら1tick の中で閉じる。
+    //      反転するので、relaxIters が偶数なら1tick の中で閉じる（④の並びは tick によらず同じ。④の頭の★）。
     const h2 = h * h;                              // ★半径外の粒子で sqrt を省くため
     const n = pts.length;
     this._flip = !this._flip;
@@ -886,7 +927,20 @@ const SPH = {
     if (this.wallMirror) this._measureWalls(pts);   // ★壁の鏡像（_measureWalls の★）
     for (let it = 0; it < this.relaxIters; it++) {
       grid = this._buildGrid(pts);
-      const rFwd = (it % 2 === 0) === this._flip;   // ★向きを反復ごとに反転（②の★）
+      // ★向きは反復ごとに反転するが、並び（前→後）は毎 tick 同じにする。
+      //   以前は②と同じ _flip で並びも tick ごとに入れ替えていた（前→後／後→前）。すると最後に効く
+      //   向きが毎 tick 変わり、重い水柱を支える面（床に置いた箱・容器の壁）に触れた粒が 2tick 周期で
+      //   往復した（見た目の「ぷるぷる」）。実測（tools/measure-body-jitter.js restDyn・乱数固定・
+      //   900tick 置いてから 300tick 時間平均）：
+      //                      箱ぎわの動き  1tick 後との相関  静止率  壁ぎわの動き  密閉水槽の渦 右vy/下vx
+      //     tick ごとに入替   0.258px/tick      −0.82          4%     0.211         1.69 / −2.46
+      //     並びを毎tick同じ  0.068             +0.84         52%     0.060         1.16 / −1.56
+      //     向きを完全に固定  0.075             +0.92         47%     0.064         2.51 / −3.04（渦が悪化）
+      //   対称な並びのままなので②の★の渦の打ち消しは保たれ、かえって小さくなった。
+      //   浮力（measure-buoyancy）は平均誤差 0.3 のまま、1個ずつのずれも ±1 ポイント以内。
+      //   対流デモ（乱数固定・1200tick 後の 300tick 平均）も循環の形は同じ：7列の上向き速度
+      //   −9.2 −1.3 +6.4 +19.9 +1.4 −4.2 −10.2 → −13.1 −4.3 +9.8 +25.0 +2.0 −5.5 −10.4、上下の平均温度 33.5/29.5℃ → 34.2/29.6℃。
+      const rFwd = this.relaxFlipPerTick ? ((it % 2 === 0) === this._flip) : (it % 2 === 0);
       for (let ii = 0; ii < n; ii++) {
         const pi = pts[rFwd ? ii : n - 1 - ii];
         const t = pi.prm;
@@ -2172,12 +2226,91 @@ function applySphCoupling(dt) {
   }
 } 
 
+// ── 粒子ツールで置く ──────────────────────────────────────────────
+//   ★液体は「静止したときの間隔の六角格子」の上に、カーソルに近い空き点から置く。
+//     以前はカーソルのまわり 20px 四方にばらまいていたが、液体の間隔は 11.2px なので
+//     その四角には 3〜4 個しか入らない。それ以上を置くと粒が重なり、近接圧力が一気に
+//     効いて押し出しがそのまま速度になる（位置ベース法。⑤の★）＝飛び散る。実測
+//     （重力0の宙に置いて 120tick。tools/measure-spawn.js）：
+//                              速さ最大の平均     80px より遠くへ飛んだ割合
+//         30個を1クリック        1614 px/s          100%
+//         4個ずつ同じ場所に20回   430 px/s          100%（既定の数でも、押さえたままだと散る）
+//     ☆格子にしてから（同じ測り方）：
+//         30個を1クリック          22 px/s           0%
+//         4個ずつ同じ場所に20回     14 px/s           0%
+//         30個ずつ同じ場所に20回    32 px/s          36%（散ったのではなく、177個の塊の半径が
+//                                                      84px あるため。置けたのは 600 個中 177 個）
+//       水たまりの上をなぞって注ぐ場合は、横向きの速さが 476 px/s 出る（4個ずつなら 165）。
+//       これは置いた塊のいちばん上から水面までを自由落下した着水の速さ √(2gh)＝461 px/s
+//       （4個ずつなら 260）と同じ程度で、しぶきとして物理どおりの量である（以前は 1854 px/s）。
+//   ・格子は世界座標に固定する。なぞって続けて置いた粒が、前に置いた粒と同じ格子に並ぶ。
+//   ・すでに粒がいる点・物体や地面の中の点は飛ばす。空きが無ければ**置かない**
+//     （重ねて置くことが飛び散りの原因そのものなので、数より重ねないことを優先する）。
+//   ・数が多ければ置く範囲がそのぶん広がる（近い点から順に埋めるので、丸い塊になる）。
+//   ・点の間隔 d は「1粒が占める面積」restArea から決める（六角格子の1点の面積 d²√3/2 = restArea
+//     → d = 12.06px）。並べた瞬間に静止密度にいる＝置いたあと縮みも膨らみもしない。
+//   ・格子の点を ±0.05d だけずらす。完全にそろった格子は、層の入れ替わりのきっかけ
+//     （小さな乱れ）を持たないため（液体の層の測定で、平らな格子の逆さの2層は動かなかった）。
+//   ★気体（分子）は従来どおりばらまく。分子運動論は大きさを無視した点の弾性衝突で、
+//     重なっても押し出しは起きない（molecule.js）。
+const SPAWN_LATTICE_D = Math.sqrt(2 * PARTICLE_TYPES.fluid.restArea / Math.sqrt(3));   // [px]
 function spawnParticles(at, type) {
-  for (let i = 0; i < particleSpawnPerEvent && particles.length < particleMaxCount; i++) {
-    const p = new Particle(at.x + (Math.random()-.5)*20, at.y + (Math.random()-.5)*20, type,
-                           type === 'fluid' ? particleLiquid : undefined);   // 液体の種類（ツールの窓で選ぶ）
+  if (type !== 'fluid') {
+    for (let i = 0; i < particleSpawnPerEvent && particles.length < particleMaxCount; i++) {
+      const p = new Particle(at.x + (Math.random()-.5)*20, at.y + (Math.random()-.5)*20, type);
+      if (particleColor) p.color = particleColor;   // ★印の色（null なら型の色のまま）
+      particles.push(p);
+    }
+    return;
+  }
+  const want = Math.min(particleSpawnPerEvent, particleMaxCount - particles.length);
+  if (want <= 0) return;
+  const d = SPAWN_LATTICE_D, dy = d * Math.sqrt(3) / 2;
+  const minD2 = (0.9 * d) ** 2;                    // これより近くに粒がいる点は塞がっている
+  const R = d * (Math.ceil(Math.sqrt(want)) + 2);  // 探す半径（N 個が丸く収まる大きさ＋余裕）
+  // 近くにいる粒だけを先に拾う（全粒子と全候補の総当たりを避ける）
+  const near = [];
+  const reach2 = (R + d) ** 2;
+  for (const p of particles) {
+    if (p.prm.kinetic) continue;                   // 分子は点なので置き場を塞がない
+    if ((p.x - at.x) ** 2 + (p.y - at.y) ** 2 <= reach2) near.push(p);
+  }
+  // 半径 R の中の格子点を、カーソルに近い順に並べる
+  const cand = [];
+  const j0 = Math.floor((at.y - R) / dy), j1 = Math.ceil((at.y + R) / dy);
+  for (let j = j0; j <= j1; j++) {
+    const off = (j & 1) ? d / 2 : 0;
+    const i0 = Math.floor((at.x - R - off) / d), i1 = Math.ceil((at.x + R - off) / d);
+    for (let i = i0; i <= i1; i++) {
+      const x = i * d + off, y = j * dy;
+      const r2 = (x - at.x) ** 2 + (y - at.y) ** 2;
+      if (r2 <= R * R) cand.push({ x, y, r2 });
+    }
+  }
+  cand.sort((a, b) => a.r2 - b.r2);
+  const rad = PARTICLE_TYPES.fluid.radius;
+  const terrain = world.terrain && ground.layers !== 0;
+  let placed = 0;
+  for (const c of cand) {
+    if (placed >= want) break;
+    const x = c.x + (Math.random() - 0.5) * 0.1 * d, y = c.y + (Math.random() - 0.5) * 0.1 * d;
+    let free = true;
+    for (const q of near) if ((q.x - x) ** 2 + (q.y - y) ** 2 < minD2) { free = false; break; }
+    if (!free) continue;
+    if (terrain && signedDistToGround(x, y) < rad) continue;
+    let inSolid = false;
+    for (const o of objects) {
+      if (_ghostBody(o)) continue;
+      const a = o._aabb;
+      if (x < a.minX - rad || x > a.maxX + rad || y < a.minY - rad || y > a.maxY + rad) continue;
+      if (o.containsPoint(x, y)) { inSolid = true; break; }
+    }
+    if (inSolid) continue;
+    const p = new Particle(x, y, 'fluid', particleLiquid, particleLiquidDensity);   // 種類と密度（ツールの窓で選ぶ）
     if (particleColor) p.color = particleColor;   // ★印の色（null なら型の色のまま）
     particles.push(p);
+    near.push(p);                                  // 同じイベントの次の点からも塞がって見える
+    placed++;
   }
 }
 

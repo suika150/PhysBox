@@ -22,6 +22,16 @@ function updateParticlePanel() {
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
   set('pcl-kind',  kind);
   set('pcl-count', list.length);
+  // 密度の欄は液体を1つでも選んでいるときだけ。密度がそろっていなければ空欄（打てば全部そろう）
+  const liqs = list.filter(p => p.type === 'fluid');
+  const rr = document.getElementById('pcl-rho-row');
+  if (rr) rr.style.display = liqs.length ? '' : 'none';
+  if (liqs.length) {
+    const r0 = liqs[0].prm.density;
+    const el = document.getElementById('pcl-rho');
+    el.value = liqs.every(p => p.prm.density === r0) ? r0 : '';
+    el.placeholder = el.value === '' ? 'ばらばら' : '';
+  }
   document.getElementById('pcl-title').textContent = `粒子 ${list.length}個を選択中`;
   showParticleSwatch(list[0].color);   // 代表1つの色を見本に出す（打ち替えは全部へ配る）
   // 熱の欄は、世界の熱スイッチがONのときだけ意味がある
@@ -66,6 +76,16 @@ function updateParticleTracer(on) {
   if (!list.length) return;
   pushUndo();
   for (const p of list) if (!!p.tracerEnabled !== !!on) setParticleTracer(p, on, tracerColor, tracerDuration);
+}
+// 選んだ液体の粒ぜんぶの密度を打ち替える（種類＝性質はそのまま。particles.js の LIQUID_VARIANTS）。
+//   ★質量が変わるので、まわりの液体との釣り合いが崩れて動き出す（重くすれば沈む）。物理どおりの反応。
+function updateParticleDensity(val) {
+  const list = selectedParticles().filter(p => p.type === 'fluid');
+  const v = parseFloat(val);
+  if (!list.length || !Number.isFinite(v)) { updateParticlePanel(); return; }
+  pushUndo();
+  for (const p of list) setParticleLiquid(p, p.liq, v);
+  updateParticlePanel();
 }
 // 選んだ粒子ぜんぶを同じ温度にする。
 //   ★系の熱量はこれで変わる。物体の温度欄を打ち替えたときと同じ扱い（手で与えた熱）で、

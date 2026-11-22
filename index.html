@@ -674,6 +674,7 @@
           <div id="particle-form" style="display:none">
             <div style="font-size:11px;color:var(--text2);margin-bottom:6px" id="pcl-title">粒子を選択中</div>
             <div class="prop-row"><span class="prop-label">種類</span><input class="prop-input" id="pcl-kind" type="text" readonly title="液体の種類（水・油・食塩水）か気体か。範囲選択のあと右クリック →「液体のみ選択」「気体のみ選択」で分けられます"></div>
+            <div class="prop-row" id="pcl-rho-row"><span class="prop-label">密度 [kg/m³]</span><input class="prop-input" id="pcl-rho" type="number" step="10" min="50" max="20000" onchange="updateParticleDensity(this.value)" title="選んだ液体の粒ぜんぶの密度を打ち替えます（気体は対象外）。&#10;変わるのは1粒の質量と浮力の重みだけで、混ざる／混ざらない・比熱・色は元の種類のままです。&#10;水より軽くすれば浮き上がり、重くすれば沈みます。"></div>
             <div class="prop-row"><span class="prop-label">個数</span><input class="prop-input" id="pcl-count" type="number" readonly title="選んでいる粒子の数"></div>
             <div class="prop-row" id="pcl-temp-row"><span class="prop-label">温度 [℃]</span><input class="prop-input" id="pcl-temp" type="number" step="1" min="-273.15" title="選んだ粒子ぜんぶの平均温度です。打ち替える／つまみを動かすと、選んだ全部がその温度になります。&#10;★気体（分子）だけは選択によらず、いる分子ぜんぶがその温度になります。分子運動論の温度は集団の速度分布そのもので、分子の一部には配れないためです（一部にだけ書くと平均で薄まり、打った値になりません）。&#10;※ここで温度を変えると系の熱量が変わります（熱源を入れたのと同じ扱い）" onchange="updateParticleTemp(this.value)"></div>
             <div class="prop-row"><span class="prop-label">熱容量 C [J/K]</span><input class="prop-input" id="pcl-heatcap" type="number" readonly title="選んだ粒子の熱容量の合計。水は1粒子あたり約0.63kg・比熱4182 J/(kg·K) です"></div>

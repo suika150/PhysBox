@@ -54,15 +54,16 @@ function _waterColorLut() {
   }
   return _wLut;
 }
-// ★液体の種類ごとに1枚ずつ塗る（水・油・食塩水は色が違う。1枚にまとめると境目が見えない）。
+// ★液体の色ごとに1枚ずつ塗る（水・油・食塩水は色が違う。1枚にまとめると境目が見えない）。
+//   密度だけを打ち替えた液体は元の種類と同じ色なので、同じ1枚に溶ける（別々に塗ると継ぎ目が出る）。
 //   水だけのシーンは従来どおり1回だけ通る。
 function drawWaterSmooth() {
   if (!particles.length) return;
-  const kinds = new Set();
-  for (const p of particles) if (p.type === 'fluid') kinds.add(p.prm);
-  for (const prm of kinds) _drawLiquidSmooth(prm);
+  const cols = new Set();
+  for (const p of particles) if (p.type === 'fluid') cols.add(p.prm.color);
+  for (const col of cols) _drawLiquidSmooth(col);
 }
-function _drawLiquidSmooth(prm) {
+function _drawLiquidSmooth(col) {
   if (!particles.length) return;
   const W = canvas.width, H = canvas.height, z = cam.zoom;
   const viz = world.thermalOn && world.thermalViz;
@@ -74,7 +75,7 @@ function _drawLiquidSmooth(prm) {
   const hw = W/(2*z), hh = H/(2*z), ext = Math.hypot(hw, hh) + R + c;   // ★回したカメラでも欠けない
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
   for (const p of particles) {
-    if (p.prm !== prm || p.color !== prm.color) continue;
+    if (p.type !== 'fluid' || p.prm.color !== col || p.color !== col) continue;
     if (Math.abs(p.x - cam.x) > ext || Math.abs(p.y - cam.y) > ext) continue;
     if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
     if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
@@ -91,7 +92,7 @@ function _drawLiquidSmooth(prm) {
   // ── 2) 場を積む ──
   const rd2 = (WATER_DROP_R*sp) ** 2;
   for (const p of particles) {
-    if (p.prm !== prm || p.color !== prm.color) continue;
+    if (p.type !== 'fluid' || p.prm.color !== col || p.color !== col) continue;
     if (Math.abs(p.x - cam.x) > ext || Math.abs(p.y - cam.y) > ext) continue;
     const i0 = Math.max(0, Math.ceil((p.x - R - x0)/c)), i1 = Math.min(nx-1, Math.floor((p.x + R - x0)/c));
     const j0 = Math.max(0, Math.ceil((p.y - R - y0)/c)), j1 = Math.min(ny-1, Math.floor((p.y + R - y0)/c));
@@ -170,7 +171,7 @@ function _drawLiquidSmooth(prm) {
     if (run >= 0) ctx.rect(x0 + run*c, yA, (nx - 1 - run)*c, c);
   }
   if (!viz) {
-    ctx.fillStyle = ctx.strokeStyle = prm.color;
+    ctx.fillStyle = ctx.strokeStyle = col;
     ctx.fill();
     // ★同じ色で細く縁取る。セル片どうしの継ぎ目がアンチエイリアスで細く透け、中倍率で
     //   水面に黒いギザギザが並んで見えた（塗りだけでは埋まらない）
